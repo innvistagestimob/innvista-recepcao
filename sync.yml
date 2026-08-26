@@ -1,0 +1,52 @@
+# Sincronização Stays → Supabase
+#
+# Roda a cada 15 minutos. Não há teto de 6 minutos por execução nem cota
+# de 90 minutos por dia — os dois limites que travavam o Apps Script.
+#
+# Custo: o Actions é gratuito para repositório público e dá 2.000 minutos
+# por mês em repositório privado. A ~30 s por rodada, 96 rodadas por dia
+# consomem cerca de 1.440 minutos/mês. Cabe, mas com pouca folga: se o
+# repositório for privado e apertar, use */20 em vez de */15.
+
+name: sync
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'      # UTC. O horário não importa: roda o tempo todo.
+  workflow_dispatch:            # botão "Run workflow" para rodar na mão
+    inputs:
+      completo:
+        description: 'Forçar catálogo e reconciliação'
+        type: boolean
+        default: false
+
+concurrency:
+  # Impede duas execuções ao mesmo tempo — o equivalente ao LockService
+  # que faltava na planilha.
+  group: sync-stays
+  cancel-in-progress: false
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Sincronizar
+        env:
+          STAYS_DOMAIN:         ${{ secrets.STAYS_DOMAIN }}
+          STAYS_CLIENT_ID:      ${{ secrets.STAYS_CLIENT_ID }}
+          STAYS_CLIENT_SECRET:  ${{ secrets.STAYS_CLIENT_SECRET }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python sync_stays.py ${{ inputs.completo && '--completo' || '' }}
