@@ -189,6 +189,12 @@ button{font:inherit;color:inherit;cursor:pointer}
   border-radius:8px;padding:11px 14px;font-size:14.5px;margin:0 0 9px}
 .campo::placeholder{color:var(--muted)}
 #formEmail{margin:0}
+.diario{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;margin:0 0 16px;text-align:left;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.7;color:var(--muted)}
+.diario b{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-2);margin-bottom:6px}
+.diario .l{white-space:pre-wrap;word-break:break-word}
 .rodape{font-size:12px;color:var(--muted);margin:20px 0 0;line-height:1.5}
 .usuario{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
 .usuario button{border:none;background:none;color:var(--accent);
@@ -212,11 +218,11 @@ button{font:inherit;color:inherit;cursor:pointer}
      ================================================================ -->
 <script>
 const CONFIG = {
-  SUPABASE_URL:  'https://fvduinlletfotoolyzgr.supabase.co',
+  SUPABASE_URL:  'https://SEU-PROJETO.supabase.co',
   // A chave PUBLICÁVEL — sb_publishable_... (ou a anon antiga, que começa
   // com eyJ). Nunca a sb_secret_: o Supabase recusa chave secreta vinda do
   // navegador, e tudo responderia 401.
-  SUPABASE_ANON: 'sb_publishable_ZWkTc16YgsU0CfJAphPIeQ_wPHtA7Af'
+  SUPABASE_ANON: 'COLE-AQUI-A-CHAVE-PUBLISHABLE'
 };
 </script>
 
@@ -226,6 +232,7 @@ const CONFIG = {
     <p>Entre para ver as reservas e as pendências do dia.</p>
 
     <div id="loginErro" class="erro" hidden></div>
+    <div id="diario" class="diario" hidden></div>
 
     <form id="formSenha">
       <input class="campo" id="email" type="email" required
@@ -360,8 +367,29 @@ document.getElementById('entrar').addEventListener('click', async () => {
   if (error) mostrarErroLogin(error.message);
 });
 document.getElementById('sair').addEventListener('click', async () => {
-  await sb.auth.signOut(); location.reload();
+  appAberto = false;                       // único lugar que desfaz a abertura
+  await sb.auth.signOut();
+  location.reload();
 });
+/**
+ * Diário de bordo na própria tela.
+ *
+ * Pedir "abre o console e me manda" só funciona para quem está no
+ * computador, com calma. Aqui a sequência de eventos fica visível no
+ * cartão de login — dá para ler ou fotografar.
+ */
+const eventos = [];
+function anotar(txt) {
+  const t = new Date().toLocaleTimeString('pt-BR');
+  eventos.push(t + '  ' + txt);
+  console.log('[painel]', txt);
+  const el = document.getElementById('diario');
+  if (!el) return;
+  el.innerHTML = '<b>Diário de bordo</b>' +
+    eventos.slice(-8).map(l => '<div class="l">' + esc(l) + '</div>').join('');
+  el.hidden = false;
+}
+
 function mostrarErroLogin(msg) {
   const e = document.getElementById('loginErro');
   e.textContent = msg;
@@ -402,10 +430,12 @@ document.getElementById('formSenha').addEventListener('submit', async ev => {
   const senha = document.getElementById('senha').value;
 
   bt.disabled = true; bt.textContent = 'Entrando…';
+  anotar('pedindo login para ' + email);
   const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
   bt.disabled = false; bt.textContent = 'Entrar';
 
-  if (error) { mostrarErroLogin(traduzir(error.message)); return; }
+  if (error) { anotar('recusado: ' + error.message); mostrarErroLogin(traduzir(error.message)); return; }
+  anotar(data && data.session ? 'sessão recebida' : 'sem erro, mas sem sessão');
   if (data && data.session) abrirApp(data.session);
 });
 
@@ -463,11 +493,18 @@ function traduzir(msg) {
   // pedir para um desfazer o que o outro fez — sai da tela de login e
   // volta, sem explicação.
   sb.auth.onAuthStateChange((evento, sessao) => {
-    console.log('[painel] auth:', evento, sessao ? sessao.user.email : 'sem sessão');
+    anotar(evento + (sessao ? ' · ' + sessao.user.email : ' · sem sessão'));
+    // Só ABRE. Nunca fecha, nunca recarrega.
+    //
+    // A versão anterior tinha aqui um location.reload() para o caso de
+    // logout — e era ele o "entra e volta": a biblioteca emite mais de um
+    // evento depois do login, e qualquer um deles vindo sem sessão
+    // recarregava a página por cima de quem já tinha entrado. Sair já é
+    // tratado no botão Sair, que é o único lugar que deve fechar a sessão.
     if (sessao) abrirApp(sessao);
-    else if (usuario) location.reload();       // saiu de verdade
   });
 
+  anotar('abrindo a página');
   const { data: { session }, error } = await sb.auth.getSession();
   if (error) {
     document.getElementById('login').hidden = false;
@@ -475,6 +512,7 @@ function traduzir(msg) {
       '\n\nConfira a URL e a chave publicável no bloco CONFIG.');
     return;
   }
+  anotar(session ? 'sessão guardada encontrada' : 'nenhuma sessão guardada');
   if (session) { abrirApp(session); return; }
   document.getElementById('login').hidden = false;
 })();
@@ -482,8 +520,9 @@ function traduzir(msg) {
 let appAberto = false;
 
 async function abrirApp(sessao) {
-  if (appAberto) return;                 // idempotente: pode ser chamada duas vezes
+  if (appAberto) { anotar('painel já estava aberto — ignorado'); return; }
   appAberto = true;
+  anotar('abrindo o painel');
   usuario = sessao.user;
 
   history.replaceState(null, '', location.pathname);
