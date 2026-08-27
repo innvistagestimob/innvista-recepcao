@@ -48,7 +48,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v3.2 (id_do_imovel + retentativa + url normalizada)"
+VERSAO = "v3.4 (imóvel casado pelo NOME + amostra de diagnóstico)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -309,34 +309,147 @@ def so_data(valor) -> str | None:
     return str(valor)[:10] if valor else None
 
 
-def id_do_imovel(res: dict, por_nome: dict) -> str | None:
+def chave_nome(s: str) -> str:
+    """
+    Reduz um nome de imóvel à sua forma comparável.
+
+    Existe porque o mesmo apartamento aparece escrito de jeitos diferentes
+    em cada lugar: "Brera 127", "BRERA127", "Brera  127 -- Units: 2",
+    "Brera 127 (Studio)". Sem acento, sem maiúscula, sem pontuação e sem
+    espaço sobrando, os quatro viram "brera 127" e casam.
+    """
+    import re
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+def indice_de_nomes(pares) -> dict:
+    """
+    Índice nome → id, com várias grafias apontando para o mesmo imóvel.
+
+    Para cada imóvel entram duas chaves: o nome como está no catálogo e a
+    forma curta ("Brera 127 -- Units: 2" → "brera 127"). Colisão não
+    sobrescreve: o primeiro a chegar fica, para um apelido ambíguo não
+    roubar o imóvel de outro.
+    """
+    indice = {}
+    for nome, ident in pares:
+        for variante in (nome, normalizar_apto(nome)):
+            k = chave_nome(variante)
+            if k and k not in indice:
+                indice[k] = ident
+    return indice
+
+
+def id_do_imovel(res: dict, por_nome: dict, validos: set | None = None) -> str | None:
     """
     Descobre a qual imóvel a reserva pertence.
 
-    Aqui estava o bug do "reservas: 0". Os dois endpoints da Stays
-    devolvem o imóvel de formas DIFERENTES:
+    Aqui mora o bug do "reservas: 0". Os endpoints da Stays devolvem o
+    imóvel de formas diferentes, e a v3.2 ainda errou porque *adivinhava*
+    o nome do campo em vez de conferir o valor contra o catálogo:
 
-        GET  /booking/reservations         → res["_idlisting"]  (só o id)
-        POST /booking/reservations-export  → res["listing"]     (objeto)
+        GET  /booking/reservations         → res["_idlisting"]  (funciona)
+        POST /booking/reservations-export  → ?                  (não era isso)
 
-    O código só olhava _idlisting. Como as reservas ativas vêm do export,
-    o id vinha vazio, nenhuma casava com o catálogo e todas eram
-    descartadas em silêncio — o log dizia "0 ativas gravadas" e seguia
-    como se fosse um dia sem reservas.
+    A v3.2 devolvia o primeiro campo que existisse, mesmo que o valor não
+    fosse um id do catálogo. Quem chamava então descartava a reserva — e o
+    log dizia "sem imóvel no catálogo", quando o certo seria "achei um
+    campo, mas o valor não serve".
 
-    A terceira tentativa, pelo nome, é rede de segurança: se um dia a
-    Stays mudar o formato de novo, o casamento ainda acontece.
+    A v3.3 inverte a lógica: **só devolve um valor que esteja no
+    catálogo.** Se o campo esperado não serve, ela continua procurando —
+    inclusive varrendo o resto do dicionário. Assim, se a Stays mudar o
+    nome do campo de novo, o casamento continua acontecendo sozinho.
+
+    `validos` é o conjunto de ids do catálogo. Sem ele (chamada antiga),
+    a função volta a se comportar como antes.
     """
-    if res.get("_idlisting"):
-        return res["_idlisting"]
+    def serve(v):
+        return isinstance(v, str) and v and (validos is None or v in validos)
 
-    listing = res.get("listing") or {}
-    for campo in ("_id", "id"):
-        if listing.get(campo):
-            return listing[campo]
+    def por_apelido(v):
+        """Tenta o nome como veio e também a forma curta ('Brera 127 -- Units: 2')."""
+        if not isinstance(v, str) or not v:
+            return None
+        for variante in (v, normalizar_apto(v)):
+            achado = por_nome.get(chave_nome(variante))
+            if achado:
+                return achado
+        return None
 
-    nome = normalizar_apto(listing.get("internalName") or "")
-    return por_nome.get(nome)
+    # 1. Campos diretos, nas grafias que a Stays já usou.
+    for campo in ("_idlisting", "idListing", "_idListing", "listingId", "idlisting"):
+        if serve(res.get(campo)):
+            return res[campo]
+
+    # 2. O campo "listing" — id solto, objeto, ou (o caso daqui) o NOME.
+    listing = res.get("listing")
+    if serve(listing):
+        return listing
+    if isinstance(listing, str):
+        achado = por_apelido(listing)
+        if achado:
+            return achado
+    if isinstance(listing, dict):
+        for campo in ("_id", "id", "_idlisting", "listingId"):
+            if serve(listing.get(campo)):
+                return listing[campo]
+        for campo in ("internalName", "name", "title", "id"):
+            achado = por_apelido(listing.get(campo))
+            if achado:
+                return achado
+
+    # 3. Nome do imóvel solto na raiz.
+    for campo in ("listingInternalName", "internalName", "listingName",
+                  "listingTitle", "apartment", "unit", "property"):
+        achado = por_apelido(res.get(campo))
+        if achado:
+            return achado
+
+    # 4. Rede final: qualquer valor, em qualquer campo, que seja um id do
+    #    catálogo ou um nome conhecido. Formato-independente por construção —
+    #    é o que impede este mesmo defeito de voltar com outro nome de campo.
+    for v in res.values():
+        if serve(v):
+            return v
+        achado = por_apelido(v)
+        if achado:
+            return achado
+    for v in res.values():
+        if isinstance(v, dict):
+            for w in v.values():
+                if serve(w):
+                    return w
+                achado = por_apelido(w)
+                if achado:
+                    return achado
+
+    return None
+
+
+def amostra_para_log(res: dict) -> str:
+    """
+    Retrato de uma reserva que não casou, sem vazar dado de hóspede.
+
+    Mostra só os NOMES dos campos e os valores curtos que parecem id ou
+    data. É o que permite descobrir o formato novo sem precisar de mais
+    uma rodada de tentativa e erro.
+    """
+    partes = []
+    for k, v in sorted(res.items()):
+        if isinstance(v, dict):
+            partes.append(f"{k}{{{','.join(sorted(v.keys())[:8])}}}")
+        elif isinstance(v, list):
+            partes.append(f"{k}[{len(v)}]")
+        elif isinstance(v, str) and len(v) <= 40 and (
+                "listing" in k.lower() or "date" in k.lower()
+                or k.lower().endswith("id") or k.lower().startswith("_id")):
+            partes.append(f"{k}={v}")
+        else:
+            partes.append(k)
+    return " ".join(partes)[:900]
 
 
 def montar_reserva(res: dict, listing_id: str | None) -> dict:
@@ -354,8 +467,10 @@ def montar_reserva(res: dict, listing_id: str | None) -> dict:
         # e nada de chamada individual por reserva — era o que estourava
         # o tempo lá.
         "hospede_fone": (cliente.get("phoneNumber") or "").replace(" ", "") or None,
-        "check_in": so_data(res.get("checkInDate")),
-        "check_out": so_data(res.get("checkOutDate")),
+        "check_in": so_data(res.get("checkInDate") or res.get("arrivalDate")
+                            or res.get("checkIn") or res.get("from")),
+        "check_out": so_data(res.get("checkOutDate") or res.get("departureDate")
+                             or res.get("checkOut") or res.get("to")),
         "hospedes": int(hospedes),
         "canal": (res.get("partner") or {}).get("name") or res.get("agent") or None,
         "criada_em": res.get("creationDate") or res.get("createdAt"),
@@ -388,10 +503,16 @@ def passo_catalogo() -> dict:
 
 
 def mapa_listings() -> tuple:
-    """Do banco, nos dois sentidos: id → nome e nome → id."""
+    """
+    Do banco, nos dois sentidos: id → nome e apelido → id.
+
+    O segundo mapa não é mais "nome exato → id": é o índice de apelidos,
+    porque a Stays identifica o imóvel da reserva pelo NOME, não pelo id
+    do catálogo. Ver id_do_imovel().
+    """
     linhas = consultar("listings", {"select": "id,nome"})
     return ({l["id"]: l["nome"] for l in linhas},
-            {l["nome"]: l["id"] for l in linhas})
+            indice_de_nomes((l["nome"], l["id"]) for l in linhas))
 
 
 def passo_reservas(validos: set, por_nome: dict) -> int:
@@ -401,7 +522,8 @@ def passo_reservas(validos: set, por_nome: dict) -> int:
     ]
     brutas = sum(len(l) for l in lotes)
 
-    vistos, linhas, sem_imovel = set(), [], 0
+    vistos, linhas = set(), []
+    sem_imovel, sem_data, amostras = 0, 0, []
     for lote in lotes:
         for res in lote:
             ident = res.get("id") or res.get("_id")
@@ -409,27 +531,36 @@ def passo_reservas(validos: set, por_nome: dict) -> int:
                 continue
             vistos.add(ident)
 
-            listing_id = id_do_imovel(res, por_nome)
+            listing_id = id_do_imovel(res, por_nome, validos)
             if listing_id not in validos:
                 sem_imovel += 1               # imóvel desativado, ou não casou
+                if len(amostras) < 2:         # retrato para diagnóstico
+                    amostras.append(amostra_para_log(res))
                 continue
             r = montar_reserva(res, listing_id)
-            if r["check_in"] and r["check_out"]:
-                r["status"] = "ativa"
-                linhas.append(r)
+            if not (r["check_in"] and r["check_out"]):
+                sem_data += 1
+                if len(amostras) < 2:
+                    amostras.append(amostra_para_log(res))
+                continue
+            r["status"] = "ativa"
+            linhas.append(r)
 
     gravar("reservations", linhas, "id")
     log(f"reservas: {len(linhas)} ativas gravadas "
-        f"(de {brutas} recebidas, {sem_imovel} sem imóvel no catálogo)")
+        f"(de {brutas} recebidas, {len(vistos)} únicas, "
+        f"{sem_imovel} sem imóvel no catálogo, {sem_data} sem data)")
 
-    # Descartar quase tudo por falta de imóvel é sinal de que o casamento
-    # quebrou, não de que o dia foi fraco. Melhor gritar do que seguir
-    # gravando zero todo dia sem ninguém perceber.
+    # Descartar quase tudo é sinal de que o casamento quebrou, não de que
+    # o dia foi fraco. Antes de gritar, mostrar o formato do que veio —
+    # sem isso, cada correção vira outra rodada de adivinhação.
     if brutas and not linhas:
+        for i, a in enumerate(amostras, 1):
+            log(f"amostra {i} do que não casou: {a}")
         raise RuntimeError(
-            f"A Stays devolveu {brutas} reservas e nenhuma casou com o catálogo "
-            f"({len(validos)} imóveis). Provável mudança no formato do campo de "
-            f"imóvel — confira id_do_imovel().")
+            f"A Stays devolveu {brutas} reservas e nenhuma foi gravada "
+            f"({len(validos)} imóveis no catálogo). Veja as amostras acima: "
+            f"elas mostram os campos que vieram.")
 
     return len(linhas)
 
@@ -455,7 +586,7 @@ def passo_reconciliacao(validos: set, por_nome: dict) -> int:
     linhas = []
     for res in canceladas:
         ident = res.get("id") or res.get("_id")
-        listing_id = id_do_imovel(res, por_nome)
+        listing_id = id_do_imovel(res, por_nome, validos)
         if not ident or listing_id not in validos:
             continue
 
@@ -485,7 +616,7 @@ def passo_reconciliacao(validos: set, por_nome: dict) -> int:
     bloqueios, vistos = [], set()
     for b in brutos:
         ident = b.get("id") or b.get("_id")
-        listing_id = id_do_imovel(b, por_nome)
+        listing_id = id_do_imovel(b, por_nome, validos)
         if not ident or ident in vistos or listing_id not in validos:
             continue
         vistos.add(ident)
@@ -554,15 +685,20 @@ def importar_cadastro(caminho: str) -> None:
     Espera as colunas: apartamento, empresa, vaga, facial
     (renomeie no CSV antes, ou ajuste os nomes aqui).
     """
-    por_nome = {l["nome"]: l["id"] for l in consultar("listings", {"select": "id,nome"})}
+    por_nome = indice_de_nomes((l["nome"], l["id"])
+                               for l in consultar("listings", {"select": "id,nome"}))
     linhas, ausentes = [], []
 
     with open(caminho, encoding="utf-8-sig", newline="") as f:
         for reg in csv.DictReader(f):
-            nome = normalizar_apto(reg.get("apartamento", ""))
-            ident = por_nome.get(nome)
+            bruto = reg.get("apartamento", "")
+            nome = normalizar_apto(bruto)
+            # Mesmo casamento tolerante das reservas: o cadastro escreve
+            # "Brera127", a Stays escreve "Brera 127 -- Units: 2".
+            ident = (por_nome.get(chave_nome(bruto))
+                     or por_nome.get(chave_nome(nome)))
             if not ident:
-                ausentes.append(nome)
+                ausentes.append(nome or bruto)
                 continue
             vaga = (reg.get("vaga") or "").strip()
             linhas.append({
