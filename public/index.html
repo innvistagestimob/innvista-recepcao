@@ -181,6 +181,14 @@ button{font:inherit;color:inherit;cursor:pointer}
 .botao.principal{background:var(--accent);border-color:var(--accent);color:#fff}
 .erro{background:var(--crit-soft);border:1px solid var(--crit-line);color:var(--crit);
   border-radius:8px;padding:12px 15px;font-size:13.5px;margin:0 0 18px;text-align:left;line-height:1.5}
+.ok{background:var(--good-soft);border:1px solid var(--good-line);color:var(--good);
+  border-radius:8px;padding:12px 15px;font-size:13.5px;margin:0 0 18px;text-align:left;line-height:1.5}
+.ou{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--muted);font-size:12.5px}
+.ou::before,.ou::after{content:"";flex:1;height:1px;background:var(--line)}
+.campo{width:100%;border:1px solid var(--line-2);background:var(--ground);color:var(--ink);
+  border-radius:8px;padding:11px 14px;font-size:14.5px;margin:0 0 9px}
+.campo::placeholder{color:var(--muted)}
+#formEmail{margin:0}
 .usuario{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
 .usuario button{border:none;background:none;color:var(--accent);
   font-size:12.5px;text-decoration:underline;padding:0}
@@ -204,19 +212,32 @@ button{font:inherit;color:inherit;cursor:pointer}
 <script>
 const CONFIG = {
   SUPABASE_URL:  'https://fvduinlletfotoolyzgr.supabase.co',
-  // A chave PUBLICÁVEL — sb_publishable_ZWkTc16YgsU0CfJAphPIeQ_wPHtA7Af (ou a anon antiga, que começa
+  // A chave PUBLICÁVEL — sb_publishable_... (ou a anon antiga, que começa
   // com eyJ). Nunca a sb_secret_: o Supabase recusa chave secreta vinda do
   // navegador, e tudo responderia 401.
-  SUPABASE_ANON: 'COLE-AQUI-A-CHAVE-PUBLISHABLE'
+  SUPABASE_ANON: 'sb_publishable_ZWkTc16YgsU0CfJAphPIeQ_wPHtA7Af'
 };
 </script>
 
 <div id="login" class="tela" hidden>
   <div class="cartao">
     <h1>Recepção Innvista</h1>
-    <p>Entre com a conta Google da Innvista para ver as reservas do dia.</p>
+    <p>Entre com a conta da Innvista para ver as reservas do dia.</p>
     <div id="loginErro" class="erro" hidden></div>
+    <div id="loginOk" class="ok" hidden></div>
+
     <button class="botao principal" id="entrar">Entrar com Google</button>
+
+    <div class="ou"><span>ou</span></div>
+
+    <!-- Link por e-mail: não exige projeto no Google Cloud nem cliente
+         OAuth. Para uma recepção de cinco pessoas costuma ser o caminho
+         mais curto — a pessoa digita o e-mail e recebe um link. -->
+    <form id="formEmail">
+      <input class="campo" id="email" type="email" required
+             placeholder="seu.email@innvista.com" autocomplete="email">
+      <button class="botao" type="submit" id="btEmail">Receber link por e-mail</button>
+    </form>
   </div>
 </div>
 
@@ -312,7 +333,28 @@ document.getElementById('sair').addEventListener('click', async () => {
 function mostrarErroLogin(msg) {
   const e = document.getElementById('loginErro');
   e.textContent = msg; e.hidden = false;
+  document.getElementById('loginOk').hidden = true;
 }
+
+document.getElementById('formEmail').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const bt = document.getElementById('btEmail');
+  const email = document.getElementById('email').value.trim();
+  bt.disabled = true; bt.textContent = 'Enviando…';
+
+  const { error } = await sb.auth.signInWithOtp({
+    email, options: { emailRedirectTo: location.href.split('#')[0] }
+  });
+
+  bt.disabled = false; bt.textContent = 'Receber link por e-mail';
+  if (error) { mostrarErroLogin(error.message); return; }
+
+  const ok = document.getElementById('loginOk');
+  ok.innerHTML = '<b>Link enviado para ' + esc(email) + '.</b><br>' +
+    'Abra o e-mail e clique no link para entrar. Ele vale por uma hora.';
+  ok.hidden = false;
+  document.getElementById('loginErro').hidden = true;
+});
 
 (async function iniciar() {
   if (CONFIG.SUPABASE_ANON.startsWith('sb_secret_')) {
