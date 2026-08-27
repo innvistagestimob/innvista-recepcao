@@ -38,6 +38,7 @@ Variáveis de ambiente (Secrets do GitHub):
 """
 
 import os
+import re
 import sys
 import csv
 import json
@@ -59,7 +60,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v3.7 (janela 09h-00h + HORA_CATALOGO)"
+VERSAO = "v4.0 (in house, limpezas D+2, alterações por diff)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -242,6 +243,40 @@ def stays_buscar(de: str, ate: str, date_type: str, tipos: list) -> list:
             log("stays_buscar: passou de 5000 registros, parando")
             break
     return saida
+
+
+def stays_notas(de: str, ate: str) -> dict:
+    """
+    Nota interna ("observações" da Stays) das reservas que saem na janela.
+
+    Por que existe uma função só para isto: os dois endpoints devolvem
+    campos diferentes, e o campo que a recepção usa para escrever
+    "Sem limpeza" está só num deles.
+
+        POST /booking/reservations-export   35 campos, SEM internalNote
+        GET  /booking/reservations          27 campos, COM internalNote
+
+    Como as reservas ativas vêm do export, a observação nunca chegava. Aqui
+    a gente busca de novo, pelo paginado, só a janela de saídas que
+    interessa para a limpeza — algo como 60 registros, 3 páginas.
+
+    Devolve {id_da_reserva: nota}. Falha em silêncio de propósito: se a
+    Stays recusar o filtro por tipo, perder a observação não pode derrubar
+    a sincronização inteira. O log diz quantas vieram.
+    """
+    notas = {}
+    try:
+        brutas = stays_buscar(de, ate, "departure", ["reserved", "booked", "contract"])
+    except Exception as e:
+        log(f"notas internas: falhou ({type(e).__name__}) — seguindo sem elas")
+        return notas
+    for r in brutas:
+        ident = r.get("id") or r.get("_id")
+        nota = (r.get("internalNote") or "").strip()
+        if ident and nota:
+            notas[ident] = nota[:2000]
+    log(f"notas internas: {len(notas)} de {len(brutas)} reservas na janela de saída")
+    return notas
 
 
 def stays_listings() -> list:
@@ -498,7 +533,12 @@ def montar_reserva(res: dict, listing_id: str | None) -> dict:
         "check_out": so_data(res.get("checkOutDate") or res.get("departureDate")
                              or res.get("checkOut") or res.get("to")),
         "hospedes": int(hospedes),
-        "canal": (res.get("partner") or {}).get("name") or res.get("agent") or None,
+        # partnerName é o que o export manda (texto). partner.name só existe
+        # no endpoint paginado. Procurar só o segundo deixava a coluna nula
+        # em TODAS as reservas ativas — o painel nunca mostrou o canal.
+        "canal": (res.get("partnerName")
+                  or (res.get("partner") or {}).get("name")
+                  or res.get("agent") or None),
         "criada_em": res.get("creationDate") or res.get("createdAt"),
         "raw": res,
         "sync_em": datetime.now(TZ).isoformat(),
@@ -541,6 +581,75 @@ def mapa_listings() -> tuple:
             indice_de_nomes((l["nome"], l["id"]) for l in linhas))
 
 
+def marcar_alteracoes(linhas: list, notas: dict) -> int:
+    """
+    Descobre o que mudou comparando com o que já está gravado.
+
+    O detector anterior casava uma reserva cancelada com uma nova pelo
+    partnerCode, partindo da ideia de que o canal cancela e recria. Só que
+    as reservas diretas da Innvista têm partnerCode NULO — e a Stays altera
+    a própria reserva, mantendo o mesmo id e trocando as datas. Resultado:
+    a aba de alterações vivia zerada, e não por falta de alterações.
+
+    Aqui a comparação é direta: datas, apartamento e número de hóspedes
+    contra a linha que está no banco. Se mudou, é alteração.
+
+    Duas sutilezas que custam caro se esquecidas:
+
+    1. Toda linha leva as MESMAS chaves. O upsert do PostgREST monta as
+       colunas a partir do primeiro objeto do lote — um objeto com chave a
+       mais no meio da lista é ignorado em silêncio.
+    2. alterada_em antigo é carregado adiante, não apagado. Quem limita a
+       validade é a view, não a gravação.
+    """
+    if not linhas:
+        return 0
+
+    guardadas = {}
+    ids = [l["id"] for l in linhas]
+    for i in range(0, len(ids), 200):                # a URL tem limite
+        pedaco = ",".join(f'"{x}"' for x in ids[i:i + 200])
+        for r in consultar("reservations", {
+                "select": "id,listing_id,check_in,check_out,hospedes,"
+                          "alterada_em,alteracao_detalhe",
+                "id": f"in.({pedaco})"}):
+            guardadas[r["id"]] = r
+
+    agora = datetime.now(TZ).isoformat()
+    mudou_agora = 0
+
+    for l in linhas:
+        antes = guardadas.get(l["id"])
+        l["nota_interna"] = notas.get(l["id"])
+        l["alterada_em"] = antes.get("alterada_em") if antes else None
+        l["alteracao_detalhe"] = antes.get("alteracao_detalhe") if antes else None
+        if not antes:
+            continue                                  # reserva nova não é alteração
+
+        diffs = []
+        if str(antes.get("check_in")) != str(l["check_in"]):
+            diffs.append(f"check-in {br(antes.get('check_in'))} → {br(l['check_in'])}")
+        if str(antes.get("check_out")) != str(l["check_out"]):
+            diffs.append(f"check-out {br(antes.get('check_out'))} → {br(l['check_out'])}")
+        if antes.get("listing_id") != l["listing_id"]:
+            diffs.append("trocou de apartamento")
+        if (antes.get("hospedes") or 0) != (l.get("hospedes") or 0):
+            diffs.append(f"hóspedes {antes.get('hospedes')} → {l.get('hospedes')}")
+
+        if diffs:
+            l["alterada_em"] = agora
+            l["alteracao_detalhe"] = "; ".join(diffs)[:500]
+            mudou_agora += 1
+
+    return mudou_agora
+
+
+def br(d) -> str:
+    """Data no formato que a recepção lê: 27/08."""
+    t = str(d or "")[:10].split("-")
+    return f"{t[2]}/{t[1]}" if len(t) == 3 else str(d)
+
+
 def passo_reservas(validos: set, por_nome: dict) -> int:
     lotes = [
         stays_export(dia(-JANELA_ARRIVAL_ATRAS), dia(JANELA_ARRIVAL_FRENTE), "arrival"),
@@ -572,10 +681,15 @@ def passo_reservas(validos: set, por_nome: dict) -> int:
             r["status"] = "ativa"
             linhas.append(r)
 
+    notas = stays_notas(dia(-JANELA_DEPARTURE_ATRAS), dia(JANELA_DEPARTURE_FRENTE))
+    alteradas = marcar_alteracoes(linhas, notas)
+
     gravar("reservations", linhas, "id")
     log(f"reservas: {len(linhas)} ativas gravadas "
         f"(de {brutas} recebidas, {len(vistos)} únicas, "
         f"{sem_imovel} sem imóvel no catálogo, {sem_data} sem data)")
+    if alteradas:
+        log(f"  alterações detectadas nesta rodada: {alteradas}")
 
     # Descartar quase tudo é sinal de que o casamento quebrou, não de que
     # o dia foi fraco. Antes de gritar, mostrar o formato do que veio —
@@ -661,39 +775,105 @@ def passo_reconciliacao(validos: set, por_nome: dict) -> int:
 
 
 def passo_limpezas(validos: set) -> int:
-    """Propõe as limpezas do dia. Nunca mexe no que o time já escreveu."""
-    hoje_iso = hoje().isoformat()
-    propostas = {}
+    """
+    Propõe as limpezas de hoje, amanhã e depois de amanhã.
 
-    for r in consultar("reservations", {"select": "id,listing_id",
-                                        "status": "eq.ativa",
-                                        "check_out": f"eq.{hoje_iso}"}):
-        propostas[r["listing_id"]] = ("check-out", r["id"])
+    Três dias porque é isso que a empresa de limpeza precisa receber na
+    véspera. Antes só existia o dia corrente, e o planejamento do dia
+    seguinte era montado na mão, no WhatsApp.
 
-    for b in consultar("blocks", {"select": "id,listing_id,tipo", "fim": f"eq.{hoje_iso}"}):
-        propostas[b["listing_id"]] = (
-            "manutencao" if b["tipo"] == "manutencao" else "bloqueio", b["id"])
+    Duas regras que evitam mandar limpeza errada para a empresa:
+
+    "Sem limpeza" na observação da Stays  → a limpeza não é criada.
+        É decisão humana explícita. Foi escrita ali justamente para isso.
+
+    Hóspede permanece (reservas emendadas) → a limpeza é criada com o
+        alerta "Verificar".
+        É dedução nossa, não declaração de ninguém. O caso real: Bruno
+        Daniel R. no On Florida 1118, com três reservas seguidas, 17→27,
+        27→28 e 28→29. Não há saída de verdade nos dias 27 e 28 — mas
+        cancelar sozinho uma limpeza por dedução é arriscado demais.
+        Melhor a empresa receber "Verificar" e confirmar.
+
+    Nunca mexe no que o time já escreveu: a gravação é ignore-duplicates.
+    """
+    dias = [dia(0), dia(1), dia(2)]
+    d_ini, d_fim = dias[0], dias[2]
+
+    saidas = consultar("reservations", {
+        "select": "id,listing_id,check_in,check_out,hospede_nome,nota_interna",
+        "status": "eq.ativa",
+        "and": f"(check_out.gte.{d_ini},check_out.lte.{d_fim})"})
+
+    # As entradas servem para descobrir se o mesmo hóspede continua: a
+    # reserva seguinte começa no dia em que esta termina.
+    entradas = consultar("reservations", {
+        "select": "id,listing_id,check_in,hospede_nome",
+        "status": "eq.ativa",
+        "and": f"(check_in.gte.{d_ini},check_in.lte.{d_fim})"})
+
+    por_entrada = {}
+    for e in entradas:
+        por_entrada.setdefault((e["listing_id"], e["check_in"]), []).append(
+            chave_nome(e.get("hospede_nome") or ""))
+
+    bloqueios = consultar("blocks", {
+        "select": "id,listing_id,tipo,fim",
+        "and": f"(fim.gte.{d_ini},fim.lte.{d_fim})"})
 
     empresas = {l["id"]: l.get("empresa_limpeza")
                 for l in consultar("listings", {"select": "id,empresa_limpeza"})}
 
-    linhas = [{"dia": hoje_iso, "listing_id": lid, "empresa": empresas.get(lid),
-               "origem": origem, "origem_id": oid, "status": "pendente"}
-              for lid, (origem, oid) in propostas.items() if lid in validos]
+    propostas, sem_limpeza, a_verificar = {}, 0, 0
 
-    # ignoreDuplicates: se a limpeza do dia já existe, não sobrescreve o
-    # status nem a ocorrência que o time anotou.
+    for r in saidas:
+        lid, quando = r["listing_id"], r["check_out"]
+        if lid not in validos:
+            continue
+
+        nota = (r.get("nota_interna") or "")
+        if re.search(r"sem\s*limpeza", nota, re.I):
+            sem_limpeza += 1
+            continue
+
+        eu = chave_nome(r.get("hospede_nome") or "")
+        permanece = bool(eu) and eu in por_entrada.get((lid, quando), [])
+        alerta = "Verificar" if permanece else None
+        if permanece:
+            a_verificar += 1
+
+        propostas[(quando, lid)] = ("check-out", r["id"], alerta)
+
+    # Bloqueio e manutenção têm precedência: verificação diferente, e é o
+    # caso que a planilha escondia dentro de "check-out".
+    for b in bloqueios:
+        lid, quando = b["listing_id"], b["fim"]
+        if lid not in validos:
+            continue
+        origem = "manutencao" if b["tipo"] == "manutencao" else "bloqueio"
+        propostas[(quando, lid)] = (origem, b["id"], None)
+
+    linhas = [{"dia": quando, "listing_id": lid, "empresa": empresas.get(lid),
+               "origem": origem, "origem_id": oid, "status": "pendente",
+               "alerta": alerta}
+              for (quando, lid), (origem, oid, alerta) in propostas.items()]
+
     if linhas:
         r = HTTP.post(
             f"{SB}/rest/v1/cleanings",
             headers={**SB_HEAD, "Prefer": "resolution=ignore-duplicates,return=minimal"},
-            params={"on_conflict": "dia,listing_id"},
+            params={"on_conflict": "dia,listing_id,origem"},
             data=json.dumps(linhas, default=str), timeout=TEMPO_LIMITE)
         if r.status_code >= 300:
             raise RuntimeError(f"cleanings: HTTP {r.status_code} — {r.text[:400]}")
 
-    de_bloqueio = sum(1 for l in linhas if l["origem"] != "check-out")
-    log(f"limpezas de hoje: {len(linhas)} ({de_bloqueio} não vieram de check-out)")
+    for d in dias:
+        doDia = [l for l in linhas if l["dia"] == d]
+        bloq = sum(1 for l in doDia if l["origem"] != "check-out")
+        log(f"limpezas {br(d)}: {len(doDia)} ({bloq} de bloqueio)")
+    if sem_limpeza or a_verificar:
+        log(f"  {sem_limpeza} puladas por \"sem limpeza\", "
+            f"{a_verificar} marcadas para verificar (hóspede permanece)")
     return len(linhas)
 
 
