@@ -6,17 +6,22 @@ Roda no GitHub Actions a cada 15 minutos. Substitui o sync_stays do
 Apps Script, e com ele somem os limites que atrapalhavam lá: não há
 teto de 6 minutos por execução nem cota de 90 minutos por dia.
 
-Três passos independentes. Se um falhar, os outros continuam — na
-planilha, um erro no meio deixava tudo pela metade sem avisar.
+Passos independentes. Se um falhar, os outros continuam — na planilha,
+um erro no meio deixava tudo pela metade sem avisar.
 
     catálogo       1×/dia    imóveis ativos da Stays
+    cadastro       sempre    empresa de limpeza, vaga e facial
     reservas       sempre    janela curta, o que o time usa
     reconciliação  1×/hora   canceladas, alteradas e bloqueios
+
+O cadastro sai da tabela cadastros_apartamentos do próprio Supabase, que
+você edita no editor de tabelas. Nada de reenviar arquivo: apartamento
+novo é uma linha. O CSV continua aceito para uma carga avulsa.
 
 Uso:
     python sync_stays.py                 # ciclo normal
     python sync_stays.py --completo      # força catálogo + reconciliação
-    python sync_stays.py --cadastro a.csv  # importa empresa/vaga/facial
+    python sync_stays.py --cadastro a.csv  # carga avulsa por arquivo
 
 Variáveis de ambiente (Secrets do GitHub):
     STAYS_DOMAIN            https://innvista.stays.net
@@ -48,7 +53,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v3.4 (imóvel casado pelo NOME + amostra de diagnóstico)"
+VERSAO = "v3.5 (cadastro pela tabela do Supabase)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -63,6 +68,11 @@ JANELA_DEPARTURE_FRENTE = 15
 TEMPO_LIMITE = 60          # segundos por chamada HTTP
 LOTE = 500                 # registros por gravação no Postgres
 PAUSA_PAGINA = 0.15        # respiro entre páginas, para não irritar a API
+
+# Tabela do Supabase com empresa de limpeza, vaga e facial. Mantida por
+# você no editor de tabelas; lida a cada rodada. Se não existir, o passo
+# sai em silêncio e nada quebra.
+TABELA_CADASTRO = "cadastros_apartamentos"
 
 
 def sessao() -> requests.Session:
@@ -675,45 +685,114 @@ def passo_limpezas(validos: set) -> int:
 # Cadastro (importação única, a partir do cadastro_apartamentos)
 # --------------------------------------------------------------------
 
-def importar_cadastro(caminho: str) -> None:
-    """
-    Traz empresa de limpeza, vaga e facial do cadastro_apartamentos.
+def coluna(colunas, *pistas) -> str | None:
+    """Acha a coluna pelo que ela significa, não pelo nome exato."""
+    for pista in pistas:
+        for c in colunas:
+            if pista in chave_nome(c).replace(" ", ""):
+                return c
+    return None
 
-    Exporte a aba 'Auxiliar pós cadastro' como CSV e rode:
-        python sync_stays.py --cadastro cadastro.csv
 
-    Espera as colunas: apartamento, empresa, vaga, facial
-    (renomeie no CSV antes, ou ajuste os nomes aqui).
+def aplicar_cadastro(registros: list, origem: str) -> int:
     """
+    Escreve empresa de limpeza, vaga e facial nos imóveis.
+
+    Recebe os registros já lidos — de um CSV ou da tabela do Supabase —
+    e cuida do que é comum aos dois: achar as colunas, casar o imóvel
+    pelo nome e gravar. Um único lugar para essa regra.
+    """
+    if not registros:
+        log(f"cadastro ({origem}): nada a importar")
+        return 0
+
+    cols = list(registros[0].keys())
+    c_apto = coluna(cols, "apartamento", "apto", "imovel", "unidade", "nome")
+    c_empresa = coluna(cols, "empresa", "limpeza")
+    c_vaga = coluna(cols, "vaga", "garagem")
+    c_facial = coluna(cols, "facial", "biometri")
+    if not c_apto:
+        log(f"cadastro ({origem}): não achei a coluna do apartamento. "
+            f"Colunas: {', '.join(map(str, cols))}")
+        return 0
+    log(f"cadastro ({origem}): apto={c_apto} empresa={c_empresa} "
+        f"vaga={c_vaga} facial={c_facial}")
+
     por_nome = indice_de_nomes((l["nome"], l["id"])
                                for l in consultar("listings", {"select": "id,nome"}))
     linhas, ausentes = [], []
 
-    with open(caminho, encoding="utf-8-sig", newline="") as f:
-        for reg in csv.DictReader(f):
-            bruto = reg.get("apartamento", "")
-            nome = normalizar_apto(bruto)
-            # Mesmo casamento tolerante das reservas: o cadastro escreve
-            # "Brera127", a Stays escreve "Brera 127 -- Units: 2".
-            ident = (por_nome.get(chave_nome(bruto))
-                     or por_nome.get(chave_nome(nome)))
-            if not ident:
-                ausentes.append(nome or bruto)
-                continue
-            vaga = (reg.get("vaga") or "").strip()
-            linhas.append({
-                "id": ident,
-                "empresa_limpeza": (reg.get("empresa") or "").strip() or None,
-                "tem_vaga": vaga.lower().startswith("sim"),
-                "vaga_detalhe": vaga if vaga.lower().startswith("sim") else None,
-                "tem_facial": (reg.get("facial") or "").strip().lower().startswith("sim"),
-            })
+    def texto(reg, col):
+        return str(reg.get(col) or "").strip() if col else ""
+
+    for reg in registros:
+        bruto = texto(reg, c_apto)
+        # Mesmo casamento tolerante das reservas: o cadastro escreve
+        # "Brera127", a Stays escreve "Brera 127 -- Units: 2".
+        ident = (por_nome.get(chave_nome(bruto))
+                 or por_nome.get(chave_nome(normalizar_apto(bruto))))
+        if not ident:
+            if bruto:
+                ausentes.append(bruto)
+            continue
+        vaga = texto(reg, c_vaga)
+        tem_vaga = vaga.lower().startswith("sim")
+        linhas.append({
+            "id": ident,
+            "empresa_limpeza": texto(reg, c_empresa) or None,
+            "tem_vaga": tem_vaga,
+            "vaga_detalhe": vaga if tem_vaga else None,
+            "tem_facial": texto(reg, c_facial).lower().startswith("sim"),
+        })
 
     gravar("listings", linhas, "id")
-    log(f"cadastro: {len(linhas)} imóveis atualizados")
+    log(f"cadastro ({origem}): {len(linhas)} imóveis atualizados")
     if ausentes:
         log(f"  não encontrados no catálogo da Stays ({len(ausentes)}): "
             + ", ".join(sorted(set(ausentes))[:15]))
+    return len(linhas)
+
+
+def passo_cadastro() -> int:
+    """
+    Traz o cadastro da tabela do Supabase, se ela existir.
+
+    Vantagem sobre o CSV: você edita no editor de tabelas do Supabase e a
+    próxima rodada já pega. Apartamento novo é uma linha, não um arquivo
+    reenviado ao GitHub. Se a tabela não existir, o passo sai em silêncio
+    — o CSV continua funcionando por --cadastro.
+    """
+    r = HTTP.get(f"{SB}/rest/v1/{TABELA_CADASTRO}", headers=SB_HEAD,
+                 params={"select": "*"}, timeout=TEMPO_LIMITE)
+    if r.status_code == 404:
+        return 0
+    if r.status_code >= 300:
+        log(f"cadastro (tabela): HTTP {r.status_code} — {r.text[:200]}")
+        return 0
+    return aplicar_cadastro(r.json(), "tabela")
+
+
+def importar_cadastro(caminho: str) -> None:
+    """
+    Importa o cadastro de um CSV, para quem preferir arquivo à tabela.
+
+        python sync_stays.py --cadastro cadastro_apartamentos.csv
+
+    O separador é detectado sozinho. Isto não é luxo: o Excel e o Sheets
+    em português exportam com PONTO E VÍRGULA, porque a vírgula é o
+    separador decimal. Lido como vírgula, o arquivo inteiro vira uma
+    coluna só chamada "apartamento;empresa;vaga;facial" e nenhuma linha
+    casa — sem erro nenhum, só zero importado.
+    """
+    with open(caminho, encoding="utf-8-sig", newline="") as f:
+        cabecalho = f.readline()
+        f.seek(0)
+        separador = max((";", ",", "\t"), key=cabecalho.count)
+        if cabecalho.count(separador) == 0:
+            sys.exit(f"Não achei separador no cabeçalho de {caminho}: {cabecalho[:120]}")
+        leitor = csv.DictReader(f, delimiter=separador)
+        leitor.fieldnames = [(c or "").strip() for c in (leitor.fieldnames or [])]
+        aplicar_cadastro(list(leitor), f"csv '{separador}'")
 
 
 # --------------------------------------------------------------------
@@ -747,6 +826,10 @@ def main() -> int:
             passo_catalogo()
             por_id, por_nome = mapa_listings()
         validos = set(por_id.keys())
+
+        # Cadastro antes das reservas: as etiquetas de vaga e facial que o
+        # time vê saem daqui, e é barato (uma leitura).
+        passo_cadastro()
 
         n_res = passo_reservas(validos, por_nome)
 
