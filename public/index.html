@@ -299,6 +299,27 @@ if (typeof supabase === 'undefined') {
   throw new Error('supabase-js não carregou');
 }
 
+/**
+ * Rede de segurança: qualquer erro não tratado aparece na tela.
+ *
+ * Sem isto, um erro de JavaScript deixa a página num estado meio-pronto
+ * sem dizer nada, e quem está usando só vê "voltou para o login". Depurar
+ * assim é adivinhação. Agora o erro aparece, com arquivo e linha.
+ */
+function mostrarFalhaGrave(origem, erro) {
+  const msg = (erro && (erro.stack || erro.message)) || String(erro);
+  const cx = document.getElementById('loginErro');
+  document.getElementById('login').hidden = false;
+  if (cx) {
+    cx.style.whiteSpace = 'pre-wrap';
+    cx.textContent = 'Erro inesperado (' + origem + ')\n\n' + msg;
+    cx.hidden = false;
+  }
+  console.error('[painel]', origem, erro);
+}
+window.addEventListener('error', e => mostrarFalhaGrave('script', e.error || e.message));
+window.addEventListener('unhandledrejection', e => mostrarFalhaGrave('promessa', e.reason));
+
 const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
   auth: {
     // O link do e-mail volta para cá trazendo a sessão na própria URL.
@@ -435,36 +456,54 @@ function traduzir(msg) {
     return;
   }
 
-  // Entra quando a sessão aparecer, seja agora ou depois que a biblioteca
-  // terminar de ler a URL do link do e-mail. Só o getSession() de uma vez
-  // podia rodar antes disso e mandar a pessoa de volta ao login.
+  // Uma fonte de verdade só: o estado da autenticação.
+  //
+  // Antes havia um getSession() imediato mais um setTimeout de 700 ms
+  // "por garantia". Dois caminhos concorrentes para a mesma decisão é
+  // pedir para um desfazer o que o outro fez — sai da tela de login e
+  // volta, sem explicação.
   sb.auth.onAuthStateChange((evento, sessao) => {
-    if (sessao && !usuario) abrirApp(sessao);
+    console.log('[painel] auth:', evento, sessao ? sessao.user.email : 'sem sessão');
+    if (sessao) abrirApp(sessao);
+    else if (usuario) location.reload();       // saiu de verdade
   });
 
-  const { data: { session } } = await sb.auth.getSession();
+  const { data: { session }, error } = await sb.auth.getSession();
+  if (error) {
+    document.getElementById('login').hidden = false;
+    mostrarErroLogin('Não consegui falar com o Supabase.\n\n' + error.message +
+      '\n\nConfira a URL e a chave publicável no bloco CONFIG.');
+    return;
+  }
   if (session) { abrirApp(session); return; }
-
-  // Nenhuma sessão e nenhum erro: pode ser que a biblioteca ainda esteja
-  // processando o link. Dá um instante antes de desistir e mostrar o login.
-  setTimeout(async () => {
-    const { data: { session: tardia } } = await sb.auth.getSession();
-    if (tardia) abrirApp(tardia);
-    else document.getElementById('login').hidden = false;
-  }, 700);
+  document.getElementById('login').hidden = false;
 })();
 
+let appAberto = false;
+
 async function abrirApp(sessao) {
-  if (usuario) return;
+  if (appAberto) return;                 // idempotente: pode ser chamada duas vezes
+  appAberto = true;
   usuario = sessao.user;
+
   history.replaceState(null, '', location.pathname);
   document.getElementById('login').hidden = true;
   document.getElementById('quem').textContent = usuario.email;
   document.getElementById('app').hidden = false;
-  await carregar();
-  ligarTempoReal();
-  setInterval(carregar, 15 * 60 * 1000);   // rede de segurança, além do tempo real
-  contador();
+
+  // Falha no carregamento mostra o problema DENTRO do painel. Não pode
+  // derrubar quem já entrou de volta para a tela de login.
+  try {
+    await carregar();
+    ligarTempoReal();
+    setInterval(carregar, 15 * 60 * 1000);   // além do tempo real
+    contador();
+  } catch (e) {
+    console.error('[painel] carregar:', e);
+    document.getElementById('rows').innerHTML =
+      '<div class="empty">Entrei, mas não consegui carregar os dados.<br><br>' +
+      esc(e.message || e) + '</div>';
+  }
 }
 
 /* ---------------- leitura ---------------- */
