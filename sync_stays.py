@@ -44,6 +44,12 @@ from urllib3.util.retry import Retry
 # Configuração
 # --------------------------------------------------------------------
 
+# Carimbo impresso no começo de toda execução. Serve para responder, sem
+# adivinhação, a pergunta que já custou caro: "é a versão nova que está
+# rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
+# outro. Suba a versão sempre que mexer no arquivo.
+VERSAO = "v3.2 (id_do_imovel + retentativa + url normalizada)"
+
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
 # Janelas operacionais. Na planilha eram 365 dias, duas vezes por
@@ -591,6 +597,7 @@ def main() -> int:
         return 0
 
     agora = datetime.now(TZ)
+    log(f"sync_stays {VERSAO}")
     run = HTTP.post(f"{SB}/rest/v1/sync_runs", headers={**SB_HEAD, "Prefer": "return=representation"},
                         data=json.dumps({"inicio": agora.isoformat()}), timeout=TEMPO_LIMITE)
     run_id = run.json()[0]["id"] if run.status_code < 300 else None
