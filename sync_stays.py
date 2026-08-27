@@ -60,7 +60,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v4.0 (in house, limpezas D+2, alterações por diff)"
+VERSAO = "v4.1 (nome completo do apto, bloqueios que somem, cancelamento honesto)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -103,7 +103,7 @@ def sessao() -> requests.Session:
     politica = Retry(
         total=4, connect=4, read=4, backoff_factor=0.5,
         status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset(["GET", "POST", "PATCH"]),
+        allowed_methods=frozenset(["GET", "POST", "PATCH", "DELETE"]),
         raise_on_status=False,
     )
     adaptador = HTTPAdapter(max_retries=politica, pool_connections=4, pool_maxsize=8)
@@ -354,16 +354,31 @@ def atualizar(tabela: str, filtro: dict, valores: dict) -> None:
 # --------------------------------------------------------------------
 
 def normalizar_apto(nome: str) -> str:
-    """Mesma normalização da planilha: 'Uwin 105 -- Units: 2' → 'Uwin 105'."""
-    import re
+    """
+    'Uwin 105 -- Units: 2' → 'Uwin 105'. 'Movi Campo Belo 1802' inteiro.
+
+    A versão anterior era herança da planilha e tinha um teto embutido: os
+    padrões cobriam nomes de UMA ou DUAS palavras antes do número, e o que
+    não casasse caía num `" ".join(s.split()[:2])` que simplesmente cortava
+    no segundo termo. "Movi Campo Belo 1802" virava "Movi Campo" — e como
+    esse é o nome que vai para o catálogo, o apartamento aparecia truncado
+    em toda parte: no painel, na mensagem da empresa e no casamento com o
+    cadastro. Um corte silencioso, que só se percebe olhando um nome longo.
+
+    A regra agora não tem teto: o nome é tudo até o primeiro número,
+    incluindo ele. Qualquer coisa depois — "-- Units: 2", "(Studio)" — é
+    sufixo da Stays e sai fora.
+    """
     s = (nome or "").strip()
-    for padrao in (r"^([A-Za-zÀ-ÿ]+)\s+([A-Za-zÀ-ÿ]+)\s+(\d{1,5})\b",
-                   r"^([A-Za-zÀ-ÿ]+)\s+(\d{1,5})\b",
-                   r"^([A-Za-zÀ-ÿ]+)(\d{1,5})$"):
-        m = re.match(padrao, s)
-        if m:
-            return " ".join(m.groups())
-    return " ".join(s.split()[:2])
+    if not s:
+        return ""
+    # "Uwin105" e "Uwin 105" precisam virar a mesma coisa, senão o índice de
+    # nomes guarda duas chaves diferentes para o mesmo apartamento.
+    s = re.sub(r"([A-Za-zÀ-ÿ])(\d)", r"\1 \2", s)
+    m = re.search(r"\d{1,5}", s)
+    if m:
+        return " ".join(s[:m.end()].split())
+    return " ".join(s.split())
 
 
 def so_data(valor) -> str | None:
@@ -709,21 +724,36 @@ def passo_reconciliacao(validos: set, por_nome: dict) -> int:
     """
     Canceladas, alteradas e bloqueios.
 
-    A parte que a planilha nunca fez direito: quando o canal cancela e
-    recria uma reserva mantendo o mesmo código de confirmação, isso é
-    uma ALTERAÇÃO, não uma duplicata. Lá ficavam duas linhas, uma morta
-    e uma viva, e o time refazia tudo do zero.
+    Sobre a data do cancelamento, que custou uma aba inteira errada:
+
+    A API da Stays NÃO devolve quando a reserva foi cancelada. Conferi o
+    payload de uma cancelada real (NM09J): tem creationDate, cancelMessage
+    ("canceled on airbnb side"), stats — e nenhum campo com a data do
+    cancelamento. A primeira versão preenchia com datetime.now(), e como a
+    gravação é upsert, TODA rodada reescrevia o carimbo. Resultado: toda
+    reserva cancelada da história parecia ter sido cancelada agora, e a aba
+    do plantão enchia de cancelamento de julho.
+
+    A correção tem duas partes:
+
+    1. cancelada_em passa a ser "quando NÓS vimos o cancelamento", gravado
+       uma vez só e nunca reescrito.
+    2. era_ativa responde a pergunta que realmente importa: essa reserva
+       chegou a existir como ativa no nosso banco? Se sim, o time pode ter
+       preparado alguma coisa e o cancelamento é assunto do plantão. Se ela
+       já nasceu cancelada aqui, é histórico anterior ao sistema — some.
     """
     canceladas = stays_buscar(dia(-JANELA_DEPARTURE_ATRAS), dia(JANELA_ARRIVAL_FRENTE),
                               "arrival", ["canceled"])
 
-    ativas_por_codigo = {}
-    for r in consultar("reservations", {"select": "id,codigo_canal",
-                                        "status": "eq.ativa",
-                                        "codigo_canal": "not.is.null"}):
-        ativas_por_codigo[r["codigo_canal"]] = r["id"]
+    ativas_por_codigo, guardadas = {}, {}
+    for r in consultar("reservations", {"select": "id,codigo_canal,status,cancelada_em,era_ativa"}):
+        guardadas[r["id"]] = r
+        if r.get("status") == "ativa" and r.get("codigo_canal"):
+            ativas_por_codigo[r["codigo_canal"]] = r["id"]
 
-    linhas = []
+    agora = datetime.now(TZ).isoformat()
+    linhas, novos_cancelamentos = [], 0
     for res in canceladas:
         ident = res.get("id") or res.get("_id")
         listing_id = id_do_imovel(res, por_nome, validos)
@@ -734,11 +764,30 @@ def passo_reconciliacao(validos: set, por_nome: dict) -> int:
         sucessora = ativas_por_codigo.get(codigo) if codigo else None
         alteracao = bool(sucessora and sucessora != ident)
 
+        antes = guardadas.get(ident)
+        se_ja_cancelada = bool(antes and antes.get("status") in ("cancelada", "alterada"))
+
         r = montar_reserva(res, listing_id)
         r["status"] = "alterada" if alteracao else "cancelada"
-        r["cancelada_em"] = (res.get("canceledAt") or res.get("cancelledAt")
-                             or datetime.now(TZ).isoformat())
         r["substituida_por"] = sucessora if alteracao else None
+        r["nota_interna"] = (res.get("internalNote") or "").strip()[:2000] or None
+        r["alterada_em"] = antes.get("alterada_em") if antes else None
+        r["alteracao_detalhe"] = antes.get("alteracao_detalhe") if antes else None
+
+        if se_ja_cancelada:
+            # Já sabíamos. Preserva o carimbo original: reescrever faria a
+            # reserva voltar ao topo da fila a cada 15 minutos, para sempre.
+            r["cancelada_em"] = antes.get("cancelada_em") or agora
+            r["era_ativa"] = bool(antes.get("era_ativa"))
+        else:
+            r["cancelada_em"] = agora
+            # Estava ativa no nosso banco até agora → o time pode ter
+            # preparado o apartamento. É isto que faz o cancelamento ser
+            # assunto do plantão, e não uma linha de histórico.
+            r["era_ativa"] = bool(antes and antes.get("status") == "ativa")
+            if r["era_ativa"]:
+                novos_cancelamentos += 1
+
         if r["check_in"] and r["check_out"]:
             linhas.append(r)
 
@@ -750,9 +799,32 @@ def passo_reconciliacao(validos: set, por_nome: dict) -> int:
     # schema.sql. O worker não escreve em tasks — nem pode.
     alteradas = [l for l in linhas if l["status"] == "alterada"]
 
-    # Bloqueios e manutenções.
-    brutos = stays_buscar(dia(-JANELA_DEPARTURE_ATRAS), dia(365),
-                          "departure", ["blocked", "maintenance"])
+    n_bloqueios = passo_bloqueios(validos, por_nome)
+
+    log(f"reconciliação: {len(linhas)} eventos ({len(alteradas)} alterações), "
+        f"{n_bloqueios} bloqueios")
+    if novos_cancelamentos:
+        log(f"  {novos_cancelamentos} cancelamento(s) de reserva que estava ativa — vão para o plantão")
+    return len(linhas)
+
+
+def passo_bloqueios(validos: set, por_nome: dict) -> int:
+    """
+    Bloqueios e manutenções — e a remoção dos que deixaram de existir.
+
+    O que faltava: quando um bloqueio é cancelado ou tem a data alterada na
+    Stays, ele simplesmente para de vir na resposta. Como a gravação é
+    upsert, a linha antiga ficava no banco para sempre — e com ela a limpeza
+    que ela tinha gerado, que continuava saindo na mensagem da empresa.
+    Aconteceu com o Uwin 1514 (alterado) e o Uwin 2205 (cancelado).
+
+    Agora o que sumiu da API some do banco. A trava é só uma: se a API
+    devolver lista vazia, não apaga nada — lista vazia é bem mais provável
+    ser falha de rede do que 100% dos bloqueios terem sido cancelados.
+    """
+    de, ate = dia(-JANELA_DEPARTURE_ATRAS), dia(365)
+    brutos = stays_buscar(de, ate, "departure", ["blocked", "maintenance"])
+
     bloqueios, vistos = [], set()
     for b in brutos:
         ident = b.get("id") or b.get("_id")
@@ -765,13 +837,52 @@ def passo_reconciliacao(validos: set, por_nome: dict) -> int:
             "tipo": "manutencao" if b.get("type") == "maintenance" else "bloqueio",
             "inicio": so_data(b.get("checkInDate")),
             "fim": so_data(b.get("checkOutDate")),
+            "nota": descricao_bloqueio(b),
+            "raw": b,
             "sync_em": datetime.now(TZ).isoformat(),
         })
-    gravar("blocks", [b for b in bloqueios if b["inicio"] and b["fim"]], "id")
 
-    log(f"reconciliação: {len(linhas)} eventos ({len(alteradas)} alterações), "
-        f"{len(bloqueios)} bloqueios")
-    return len(linhas)
+    validos_bloqueios = [b for b in bloqueios if b["inicio"] and b["fim"]]
+    gravar("blocks", validos_bloqueios, "id")
+
+    if brutos:
+        sumidos = [g["id"] for g in consultar("blocks", {
+            "select": "id", "and": f"(fim.gte.{de},fim.lte.{ate})"})
+            if g["id"] not in vistos]
+        if sumidos:
+            apagar_em_lotes("blocks", sumidos)
+            log(f"  {len(sumidos)} bloqueio(s) sumiram da Stays e foram removidos")
+    else:
+        log("  a Stays não devolveu bloqueio nenhum — nada foi removido, por segurança")
+
+    com_nota = sum(1 for b in validos_bloqueios if b["nota"])
+    log(f"bloqueios: {len(validos_bloqueios)} ({com_nota} com descrição)")
+    return len(validos_bloqueios)
+
+
+def descricao_bloqueio(b: dict) -> str | None:
+    """
+    A descrição que a recepção escreve na Stays ao criar o bloqueio.
+
+    O nome do campo não está documentado, então tenta os candidatos em
+    ordem. O `raw` fica guardado no banco justamente para descobrir o nome
+    certo sem precisar de outra rodada de tentativa e erro.
+    """
+    for campo in ("internalNote", "description", "note", "notes",
+                  "cancelMessage", "title", "reason"):
+        v = b.get(campo)
+        if isinstance(v, str) and v.strip():
+            return v.strip()[:2000]
+    return None
+
+
+def apagar_em_lotes(tabela: str, ids: list) -> None:
+    for i in range(0, len(ids), 100):
+        pedaco = ",".join(f'"{x}"' for x in ids[i:i + 100])
+        r = HTTP.delete(f"{SB}/rest/v1/{tabela}", headers=SB_HEAD,
+                        params={"id": f"in.({pedaco})"}, timeout=TEMPO_LIMITE)
+        if r.status_code >= 300:
+            raise RuntimeError(f"{tabela}: HTTP {r.status_code} ao apagar — {r.text[:300]}")
 
 
 def passo_limpezas(validos: set) -> int:
