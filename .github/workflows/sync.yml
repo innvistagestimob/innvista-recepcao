@@ -3,6 +3,9 @@
 # Roda a cada 15 minutos. Não há teto de 6 minutos por execução nem cota
 # de 90 minutos por dia — os dois limites que travavam o Apps Script.
 #
+# Também faz a importação do cadastro (empresa de limpeza, vaga, facial),
+# para não ser preciso terminal nem Python instalado em lugar nenhum.
+#
 # Custo: o Actions é gratuito para repositório público e dá 2.000 minutos
 # por mês em repositório privado. A ~30 s por rodada, 96 rodadas por dia
 # consomem cerca de 1.440 minutos/mês. Cabe, mas com pouca folga: se o
@@ -19,6 +22,10 @@ on:
         description: 'Forçar catálogo e reconciliação'
         type: boolean
         default: false
+      cadastro:
+        description: 'Importar cadastro: nome do CSV no repositório (ex.: cadastro_apartamentos.csv). Vazio = sincronização normal.'
+        type: string
+        default: ''
 
 concurrency:
   # Impede duas execuções ao mesmo tempo — o equivalente ao LockService
@@ -48,5 +55,16 @@ jobs:
           STAYS_CLIENT_SECRET:  ${{ secrets.STAYS_CLIENT_SECRET }}
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # Passado por variável, e não direto no comando, para que um nome
+          # de arquivo estranho não vire comando de shell.
+          CADASTRO:             ${{ inputs.cadastro }}
+          COMPLETO:             ${{ inputs.completo }}
         run: |
-          python sync_stays.py ${{ inputs.completo && '--completo' || '' }}
+          if [ -n "$CADASTRO" ]; then
+            echo "Importando cadastro de $CADASTRO"
+            python sync_stays.py --cadastro "$CADASTRO"
+          elif [ "$COMPLETO" = "true" ]; then
+            python sync_stays.py --completo
+          else
+            python sync_stays.py
+          fi
