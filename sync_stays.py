@@ -66,7 +66,34 @@ STAYS_AUTH = "Basic " + base64.b64encode(
     f'{env("STAYS_CLIENT_ID")}:{env("STAYS_CLIENT_SECRET")}'.encode()
 ).decode()
 
-SB = env("SUPABASE_URL").rstrip("/")
+def url_supabase(bruta: str) -> str:
+    """
+    Normaliza a URL do projeto.
+
+    A pegadinha: o painel do Supabase mostra a URL do projeto em um lugar
+    e trechos de código com a URL da API em outro. Quem copia do trecho de
+    código leva junto o /rest/v1 — e aí o caminho fica duplicado
+    (/rest/v1/rest/v1/listings), o que devolve PGRST125,
+    "Invalid path specified in request URL". O erro não fala em URL, fala
+    em caminho, então custa a fazer sentido.
+    """
+    u = bruta.strip().rstrip("/")
+    if not u.startswith(("http://", "https://")):
+        u = "https://" + u
+
+    for sufixo in ("/rest/v1", "/rest", "/auth/v1", "/storage/v1", "/graphql/v1"):
+        if u.endswith(sufixo):
+            u = u[: -len(sufixo)].rstrip("/")
+
+    resto = u.split("://", 1)[1]
+    if "/" in resto:
+        sys.exit(f"SUPABASE_URL tem caminho a mais: {bruta}\n"
+                 f"Use só o endereço do projeto, algo como "
+                 f"https://{resto.split('/')[0]}")
+    return u
+
+
+SB = url_supabase(env("SUPABASE_URL"))
 SB_KEY = env("SUPABASE_SERVICE_KEY")
 
 # O Supabase tem dois formatos de chave, e eles NÃO usam os mesmos cabeçalhos.
