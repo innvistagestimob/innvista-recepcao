@@ -15,7 +15,18 @@ name: sync
 
 on:
   schedule:
-    - cron: '*/15 * * * *'      # UTC. O horário não importa: roda o tempo todo.
+    # O cron do GitHub é em UTC. São Paulo é UTC-3 o ano inteiro (o Brasil
+    # acabou com o horário de verão em 2019), então 09h daqui = 12h UTC e
+    # meia-noite daqui = 03h UTC. As horas 0-2 UTC são o fim da noite de
+    # ontem — 21h, 22h e 23h de São Paulo.
+    #
+    # Janela: 09h à meia-noite. 60 rodadas/dia, ~1.825 min/mês — cabe nos
+    # 2.000 minutos gratuitos. Rodar 24h custaria ~2.900 e a conta pararia
+    # no meio do mês.
+    #
+    # Se mexer nestas horas, confira HORA_CATALOGO no sync_stays.py: ela
+    # precisa cair dentro da janela, senão o catálogo nunca se atualiza.
+    - cron: '*/15 0-2,12-23 * * *'
   workflow_dispatch:            # botão "Run workflow" para rodar na mão
     inputs:
       completo:
@@ -23,7 +34,7 @@ on:
         type: boolean
         default: false
       cadastro:
-        description: 'Importar cadastro: nome do CSV no repositório (ex.: cadastro.csv). Vazio = sincronização normal.'
+        description: 'Importar cadastro: nome do CSV no repositório (ex.: cadastro_apartamentos.csv). Vazio = sincronização normal.'
         type: string
         default: ''
 
