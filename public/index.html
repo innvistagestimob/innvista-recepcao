@@ -461,7 +461,7 @@ const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
 // Mesmo carimbo do sync_stays.py, pelo mesmo motivo: responder sem
 // adivinhação a "é o painel novo que está no ar?". Aparece no diário de
 // bordo da tela de login e no console. Suba a versão sempre que mexer.
-const VERSAO_PAINEL = 'v2.1 (cancelar extra, quem paga, ajustes das abas)';
+const VERSAO_PAINEL = 'v2.2 (bloqueios 7 dias com descrição)';
 console.log('[painel] ' + VERSAO_PAINEL);
 
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -473,6 +473,8 @@ let usuario = null;
 let D = { checkins: [], novas: [], inhouse: [], canc: [], alt: [],
            bloqueios: [], limpezas: [], tarefas: {} };
 const DEPOIS = (() => { const d = new Date(); d.setDate(d.getDate() + 2);
+  return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); })();
+const SETE_DIAS = (() => { const d = new Date(); d.setDate(d.getDate() + 7);
   return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); })();
 let view = 'novas', onlyPend = false, q = '', flt = null;
 
@@ -689,7 +691,11 @@ async function carregar() {
       sb.from('v_in_house').select('*'),
       sb.from('v_cancelamentos').select('*'),
       sb.from('v_alteracoes').select('*'),
-      sb.from('blocks').select('*, listings(nome)').gte('fim', HOJE).order('fim').limit(200),
+      // Bloqueios que TOCAM os próximos 7 dias: começou antes e ainda não
+      // acabou também conta. O filtro anterior era só fim >= hoje, sem teto,
+      // e trazia bloqueio de dezembro junto com o de amanhã.
+      sb.from('blocks').select('*, listings(nome)')
+        .gte('fim', HOJE).lte('inicio', SETE_DIAS).order('fim').limit(200),
       sb.from('v_limpezas').select('*'),
       sb.from('tasks').select('assunto_tipo,assunto_id,item,feito'),
       sb.from('sync_runs').select('*').order('inicio', { ascending: false }).limit(1)
@@ -890,7 +896,7 @@ const HINTS = {
   prox:'Check-ins de amanhã em diante. Os de hoje ficam na aba própria.',
   alt:'Alterações em reservas de hóspedes que já estão no apartamento — trocar credenciais e reenviar a facial.',
   canc:'Cancelamentos que exigem ação hoje: a reserva era de hoje, ou o hóspede já estava hospedado.',
-  bloq:'Bloqueio de proprietário e manutenção também ocupam o apartamento — e geram limpeza na saída.',
+  bloq:'Bloqueios e manutenções dos próximos 7 dias, com a descrição escrita na Stays.',
   limp:'Confirme com a empresa e registre qualquer manutenção ou problema reportado.',
   agenda:'O planejamento para mandar às empresas. Copie e cole no WhatsApp de cada uma.'
 };
@@ -1021,9 +1027,11 @@ function rowBloqueio(b, st) {
   return `<div class="row ${dias >= 0 && dias <= 2 ? 'sev-warn' : 'sev-viol'}"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(b.apartamento)}</span>
       <span class="tag ${man ? 'manut' : 'bloq'}">${man ? 'Manutenção' : 'Bloqueio'}</span></div>
-      <div class="guest">${man ? 'Serviço técnico no apartamento — precisa de limpeza depois.'
-                               : 'Uso do proprietário ou bloqueio operacional — precisa de limpeza na saída.'}</div>
-      <div class="r-meta"><span>${dm(b.inicio)} → ${dm(b.fim)}</span></div></div>
+      <div class="guest">${b.nota ? esc(b.nota)
+        : (man ? 'Serviço técnico no apartamento — precisa de limpeza depois.'
+               : 'Uso do proprietário ou bloqueio operacional — precisa de limpeza na saída.')}</div>
+      <div class="r-meta"><span>${dm(b.inicio)} → ${dm(b.fim)}</span>
+        ${b.nota ? '' : '<span class="miss">sem descrição na Stays</span>'}</div></div>
     <div class="when ${dias === 0 ? 'hoje' : dias === 1 ? 'amanha' : ''}"><b>${dl}</b>saída</div>
     <div class="chips">${chipsHTML(st)}</div></div></div>`;
 }
