@@ -53,7 +53,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v3.5 (cadastro pela tabela do Supabase)"
+VERSAO = "v3.6 (cadastro pela tabela do Supabase)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -263,6 +263,11 @@ def gravar(tabela: str, linhas: list, conflito: str) -> int:
     Upsert. Só as colunas presentes no payload são atualizadas — é o
     que preserva empresa_limpeza, tem_vaga e tem_facial em listings,
     que são mantidas por gente e não vêm da Stays.
+
+    Cuidado ao montar o payload: isto vira INSERT ... ON CONFLICT DO
+    UPDATE. O Postgres valida as restrições do INSERT mesmo quando a
+    linha já existe e só o UPDATE vai acontecer — então toda coluna
+    not null precisa vir junto, ainda que você não queira mudá-la.
     """
     if not linhas:
         return 0
@@ -718,8 +723,14 @@ def aplicar_cadastro(registros: list, origem: str) -> int:
     log(f"cadastro ({origem}): apto={c_apto} empresa={c_empresa} "
         f"vaga={c_vaga} facial={c_facial}")
 
-    por_nome = indice_de_nomes((l["nome"], l["id"])
-                               for l in consultar("listings", {"select": "id,nome"}))
+    catalogo = consultar("listings", {"select": "id,nome"})
+    por_nome = indice_de_nomes((l["nome"], l["id"]) for l in catalogo)
+    # O nome vai junto na gravação de propósito. O upsert do PostgREST é
+    # um INSERT ... ON CONFLICT DO UPDATE: mesmo quando o imóvel já
+    # existe e só o UPDATE vai acontecer, o Postgres valida o INSERT
+    # antes — e `nome` é not null. Sem esta linha, a gravação inteira
+    # morre com 23502 na primeira linha do lote.
+    nome_por_id = {l["id"]: l["nome"] for l in catalogo}
     linhas, ausentes = [], []
 
     def texto(reg, col):
@@ -739,6 +750,7 @@ def aplicar_cadastro(registros: list, origem: str) -> int:
         tem_vaga = vaga.lower().startswith("sim")
         linhas.append({
             "id": ident,
+            "nome": nome_por_id[ident],
             "empresa_limpeza": texto(reg, c_empresa) or None,
             "tem_vaga": tem_vaga,
             "vaga_detalhe": vaga if tem_vaga else None,
