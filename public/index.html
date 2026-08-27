@@ -182,6 +182,10 @@ dialog::backdrop{background:rgba(19,28,37,.5)}
 .btn-sec{border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);
   border-radius:6px;padding:9px 16px;font-size:14px;cursor:pointer}
 .chip.acao{border-color:var(--accent);color:var(--accent-ink)}
+#atualizar{margin-left:10px;border:1px solid var(--line-2);background:var(--surface);
+  color:var(--ink-2);border-radius:6px;padding:4px 11px;font-size:12.5px;cursor:pointer}
+#atualizar:hover:not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
+#atualizar:disabled{opacity:.55;cursor:default}
 .row.cancelada{opacity:.55}
 .row.cancelada .apto{text-decoration:line-through}
 .acao-txt{font-style:italic}
@@ -323,7 +327,8 @@ const CONFIG = {
     <div class="top-in">
       <div class="brand"><h1>Recepção</h1><span class="sub">Innvista</span></div>
       <div class="sync"><span class="dot" id="pulso"></span>
-        <span id="estadoSync">conectando…</span></div>
+        <span id="estadoSync">conectando…</span>
+        <button id="atualizar" title="Busca as reservas novas na Stays agora">Atualizar agora</button></div>
       <div class="usuario"><span id="quem"></span><button id="sair">sair</button></div>
     </div>
     <div class="progress"><i id="bar"></i></div>
@@ -461,7 +466,7 @@ const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
 // Mesmo carimbo do sync_stays.py, pelo mesmo motivo: responder sem
 // adivinhação a "é o painel novo que está no ar?". Aparece no diário de
 // bordo da tela de login e no console. Suba a versão sempre que mexer.
-const VERSAO_PAINEL = 'v2.2 (bloqueios 7 dias com descrição)';
+const VERSAO_PAINEL = 'v2.3 (botão atualizar agora)';
 console.log('[painel] ' + VERSAO_PAINEL);
 
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -1203,6 +1208,48 @@ function goto(v, f, p) {
   document.querySelectorAll('.kpi').forEach(b => b.setAttribute('aria-pressed', 'false'));
 }
 
+/* ---------------- atualizar agora ---------------- */
+
+// O relógio da sincronização mora no Postgres (pg_cron), não no GitHub: o
+// agendador do Actions nunca disparou em repositório privado no plano Free.
+// Este botão usa o mesmo caminho do agendamento — pede ao GitHub que rode o
+// workflow — e existe para o caso que a cadência não cobre: a reserva que
+// acabou de entrar e o hóspede está no balcão.
+//
+// O pedido é assíncrono: o GitHub aceita na hora e a rodada leva ~30s. Por
+// isso o botão espera e recarrega sozinho, em vez de fingir que já acabou.
+async function pedirSincronizacao() {
+  const b = document.getElementById('atualizar');
+  b.disabled = true;
+  const antes = b.textContent;
+  b.textContent = 'pedindo…';
+
+  const { data, error } = await sb.rpc('sincronizar_agora');
+  if (error) {
+    avisar('Não consegui pedir a atualização: ' + error.message);
+    b.disabled = false; b.textContent = antes;
+    return;
+  }
+  if (!data || !data.ok) {
+    avisar((data && data.mensagem) || 'Não consegui pedir a atualização.');
+    b.disabled = false; b.textContent = antes;
+    return;
+  }
+
+  document.getElementById('estadoSync').textContent = 'buscando na Stays…';
+  let faltam = 45;
+  b.textContent = 'aguarde ' + faltam + 's';
+  const conta = setInterval(() => {
+    faltam--;
+    b.textContent = 'aguarde ' + faltam + 's';
+    if (faltam <= 0) {
+      clearInterval(conta);
+      b.disabled = false; b.textContent = antes;
+      carregar();
+    }
+  }, 1000);
+}
+
 /* ---------------- limpeza adicional ---------------- */
 
 let extraCtx = null;
@@ -1338,6 +1385,8 @@ document.getElementById('exCancelar').addEventListener('click',
   () => document.getElementById('dlgExtra').close());
 document.getElementById('txFechar').addEventListener('click',
   () => document.getElementById('dlgTexto').close());
+
+document.getElementById('atualizar').addEventListener('click', pedirSincronizacao);
 
 const op = document.getElementById('onlyPend');
 op.addEventListener('click', () => { onlyPend = !onlyPend; op.setAttribute('aria-pressed', String(onlyPend)); render(); });
