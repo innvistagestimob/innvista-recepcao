@@ -55,6 +55,13 @@ Faça na ordem. Cada passo depende do anterior.
    | `sb_publishable_…` | aba *Publishable and secret* | o bloco CONFIG do `painel.html` |
    | `sb_secret_…` | mesma aba, botão de revelar | Secrets do GitHub, e **só lá** |
 
+   > ⚠️ **A URL do projeto termina em `.supabase.co` e mais nada.** Algo como
+   > `https://abcdefgh.supabase.co`. Se você copiar de um trecho de código do
+   > painel, vem `https://abcdefgh.supabase.co/rest/v1` junto — e aí o caminho
+   > fica duplicado, com um erro (`PGRST125 — Invalid path specified in request
+   > URL`) que fala de caminho e não de URL, o que atrapalha na hora de
+   > entender. O script corta esse sufixo sozinho, mas é melhor guardar limpo.
+
    **A publishable pode ficar visível no HTML** — ela é pública por natureza, e
    quem protege os dados é o row level security do banco, não o segredo da
    chave. A `sb_secret_` nunca entra no HTML nem no repositório.
@@ -139,18 +146,32 @@ uma vez.
    nomes exatos no cabeçalho: `apartamento`, `empresa`, `vaga`, `facial`.
    *(Hoje são as colunas O, J, I e P — mas o script passa a usar o nome, não a
    posição. É por isso que arrastar uma coluna deixa de quebrar tudo.)*
-3. `Arquivo → Fazer download → CSV`.
-4. No seu computador:
+3. `Arquivo → Fazer download → Valores separados por vírgula (.csv)`.
+   Vai para a sua pasta de Downloads.
 
-```bash
-pip install requests
-export SUPABASE_URL="..." SUPABASE_SERVICE_KEY="..."
-export STAYS_DOMAIN="..." STAYS_CLIENT_ID="..." STAYS_CLIENT_SECRET="..."
-python sync_stays.py --cadastro cadastro.csv
+4. **Suba o CSV para o repositório** — pelo navegador, como os outros arquivos:
+   **Add file → Upload files**, arraste o CSV, **Commit changes**.
+   Anote o nome exato do arquivo (ex.: `cadastro.csv`).
+
+5. **Actions → sync → Run workflow.** No campo *Importar cadastro*, digite o
+   nome do arquivo. Deixe o *Forçar catálogo* desmarcado. **Run workflow**.
+
+O log mostra quantos imóveis foram atualizados e lista os que ele não achou no
+catálogo da Stays — normalmente os desativados, que podem ser ignorados:
+
+```
+cadastro: 113 imóveis atualizados
+  não encontrados no catálogo da Stays (5): Extension 135, Uwin 1713, ...
 ```
 
-O script avisa quais apartamentos do CSV ele não achou no catálogo da Stays —
-normalmente são os desativados, e podem ser ignorados.
+Depois de importar, o CSV já cumpriu o papel — se preferir, apague do
+repositório (abra o arquivo → ícone de lixeira → Commit).
+
+> **Por que não rodar no seu computador:** dava para fazer com Python
+> instalado e três comandos no terminal, mas seria a única etapa do sistema
+> inteiro a exigir isso. Rodando aqui, tudo vive no mesmo lugar: os Secrets já
+> estão configurados, o log fica registrado, e daqui a um ano você repete o
+> processo sem precisar lembrar de nada.
 
 ### 4. Painel (15 min)
 
