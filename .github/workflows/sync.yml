@@ -1,21 +1,32 @@
 # Sincronização Stays → Supabase
 #
-# Roda a cada 15 minutos. Não há teto de 6 minutos por execução nem cota
-# de 90 minutos por dia — os dois limites que travavam o Apps Script.
+# Roda a cada 15 minutos, das 09h à meia-noite de São Paulo. Não há teto
+# de 6 minutos por execução nem cota de 90 minutos por dia — os dois
+# limites que travavam o Apps Script.
 #
 # Também faz a importação do cadastro (empresa de limpeza, vaga, facial),
 # para não ser preciso terminal nem Python instalado em lugar nenhum.
 #
 # Custo: o Actions é gratuito para repositório público e dá 2.000 minutos
-# por mês em repositório privado. A ~30 s por rodada, 96 rodadas por dia
-# consomem cerca de 1.440 minutos/mês. Cabe, mas com pouca folga: se o
-# repositório for privado e apertar, use */20 em vez de */15.
+# por mês em repositório privado. Cada rodada é cobrada como 1 minuto
+# CHEIO, mesmo durando 20 segundos. Por isso a janela: 24h custariam
+# ~2.900 min/mês e a conta pararia no meio do mês.
 
 name: sync
 
 on:
   schedule:
-    - cron: '*/15 * * * *'      # UTC. O horário não importa: roda o tempo todo.
+    # O cron do GitHub é em UTC. São Paulo é UTC-3 o ano inteiro (o Brasil
+    # acabou com o horário de verão em 2019), então 09h daqui = 12h UTC e
+    # meia-noite daqui = 03h UTC. As horas 0-2 UTC são o fim da noite de
+    # ontem — 21h, 22h e 23h de São Paulo.
+    #
+    # Janela: 09h à meia-noite. 60 rodadas/dia, ~1.825 min/mês — cabe nos
+    # 2.000 minutos gratuitos.
+    #
+    # Se mexer nestas horas, confira HORA_CATALOGO no sync_stays.py: ela
+    # precisa cair dentro da janela, senão o catálogo nunca se atualiza.
+    - cron: '*/15 0-2,12-23 * * *'
   workflow_dispatch:            # botão "Run workflow" para rodar na mão
     inputs:
       completo:
