@@ -182,6 +182,9 @@ dialog::backdrop{background:rgba(19,28,37,.5)}
 .btn-sec{border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);
   border-radius:6px;padding:9px 16px;font-size:14px;cursor:pointer}
 .chip.acao{border-color:var(--accent);color:var(--accent-ink)}
+.row.cancelada{opacity:.55}
+.row.cancelada .apto{text-decoration:line-through}
+.acao-txt{font-style:italic}
 .guest{font-size:14px;color:var(--ink-2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .r-meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;
   font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted)}
@@ -362,6 +365,14 @@ const CONFIG = {
         <option value="repasse">Repasse por problema de limpeza</option>
       </select></label>
 
+    <label>Quem paga
+      <select id="exQuemPaga">
+        <option value="hospede">Hóspede</option>
+        <option value="innvista">Innvista</option>
+        <option value="empresa">Empresa de limpeza — erro operacional deles</option>
+      </select>
+      <small>Muda sozinho com o motivo; corrija se for outro caso.</small></label>
+
     <label>Valor cobrado
       <input type="text" id="exValor" inputmode="decimal" placeholder="180,00">
       <small>Deixe em branco quando for repasse.</small></label>
@@ -450,7 +461,7 @@ const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
 // Mesmo carimbo do sync_stays.py, pelo mesmo motivo: responder sem
 // adivinhação a "é o painel novo que está no ar?". Aparece no diário de
 // bordo da tela de login e no console. Suba a versão sempre que mexer.
-const VERSAO_PAINEL = 'v2.0 (in house, agenda das empresas, limpeza extra)';
+const VERSAO_PAINEL = 'v2.1 (cancelar extra, quem paga, ajustes das abas)';
 console.log('[painel] ' + VERSAO_PAINEL);
 
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -833,11 +844,18 @@ function stBloqueio(b) {
 }
 
 function stLimpeza(l) {
-  const conf = l.status && l.status !== 'pendente';
-  return { tipo: 'limpeza', id: String(l.id), limpezaId: l.id, status: l.status, items: [
-    { f: '__status', label: conf ? 'Limpeza confirmada' : 'Confirmar limpeza', s: conf ? 'done' : 'pend' },
-    { f: 'vistoria', label: 'Apartamento vistoriado', s: feito('limpeza', String(l.id), 'vistoria') ? 'done' : 'pend' }
-  ] };
+  const cancelada = l.status === 'cancelada';
+  const conf = l.status && l.status !== 'pendente' && !cancelada;
+  const S = cancelada
+    ? [{ f: '__reativar', label: 'Reativar limpeza', s: 'pend' }]
+    : [{ f: '__status', label: conf ? 'Limpeza confirmada' : 'Confirmar limpeza', s: conf ? 'done' : 'pend' },
+       { f: 'vistoria', label: 'Apartamento vistoriado', s: feito('limpeza', String(l.id), 'vistoria') ? 'done' : 'pend' }];
+  // Só a limpeza lançada à mão pode ser cancelada. As que vêm da Stays somem
+  // sozinhas quando a reserva muda — cancelar na mão criaria divergência
+  // entre o painel e o que a sincronização vai propor na próxima rodada.
+  if (l.origem === 'extra' && !cancelada)
+    S.push({ f: '__cancelar', label: 'Cancelar esta limpeza', s: 'pend' });
+  return { tipo: 'limpeza', id: String(l.id), limpezaId: l.id, status: l.status, items: S };
 }
 
 const pendOf = st => st.items.filter(x => x.s === 'pend').length;
@@ -847,7 +865,12 @@ const pendOf = st => st.items.filter(x => x.s === 'pend').length;
 // prox exclui os check-ins de hoje de propósito: eles já têm aba própria,
 // e repetir a mesma reserva em duas listas fazia o time conferir duas vezes.
 const proximos = () => D.checkins.filter(c => c.check_in > HOJE);
-const limpDe = d => D.limpezas.filter(l => l.dia === d);
+// "Ativa" exclui a cancelada em toda parte: contagem das abas, KPIs e,
+// principalmente, a mensagem que vai para a empresa. Limpeza cancelada que
+// continua na mensagem é pior que limpeza esquecida — a empresa vai, não tem
+// o que fazer, e cobra a visita.
+const ativa = l => l.status !== 'cancelada';
+const limpDe = d => D.limpezas.filter(l => l.dia === d && ativa(l));
 
 const TABS = [
   { id: 'novas',   label: 'Novas · 24h',      n: () => D.novas.length },
@@ -876,11 +899,16 @@ function baseList() {
   if (view === 'novas')   return D.novas.map(d => ({ t: 'R', d }));
   if (view === 'hoje')    return D.checkins.filter(c => c.check_in === HOJE).map(d => ({ t: 'R', d }));
   if (view === 'inhouse') return D.inhouse.map(d => ({ t: 'H', d }));
-  if (view === 'prox')    return proximos().map(d => ({ t: 'R', d }));
+  // Com o filtro de telefone a lista volta a incluir HOJE: uma reserva que
+  // chega hoje sem telefone é a mais urgente de todas — era justamente a que
+  // sumia quando a aba passou a mostrar só de amanhã em diante.
+  if (view === 'prox')    return (flt === 'semTel' ? D.checkins : proximos()).map(d => ({ t: 'R', d }));
   if (view === 'alt')     return D.alt.map(d => ({ t: 'A', d }));
   if (view === 'canc')    return D.canc.map(d => ({ t: 'E', d }));
   if (view === 'bloq')    return D.bloqueios.map(d => ({ t: 'B', d }));
-  if (view === 'limp')    return limpDe(HOJE).map(d => ({ t: 'L', d }));
+  // A aba de hoje mostra também as canceladas — é onde se reativa uma que
+  // foi cancelada por engano. Elas só não entram na contagem nem na mensagem.
+  if (view === 'limp')    return D.limpezas.filter(l => l.dia === HOJE).map(d => ({ t: 'L', d }));
   return [];
 }
 const stOf = x => x.t === 'R' || x.t === 'H' ? stReserva(x.d)
@@ -975,12 +1003,13 @@ function rowEvento(e, st) {
     <div class="r-main"><div class="r-top"><span class="apto">${esc(e.apartamento)}</span>
       <span class="tag canc">Cancelada</span>
       ${dentro ? '<span class="tag perm">Estava hospedado</span>' : '<span class="tag entrada">Chegava hoje</span>'}</div>
-      <div class="guest">${dentro
-        ? 'O hóspede já estava no apartamento. Recolha as credenciais, avise a portaria e libere a limpeza.'
-        : 'Chegava hoje. Desfaça o que já tinha sido preparado — credenciais, facial e vaga.'}</div>
+      <div class="guest">${esc(e.hospede_nome || '— hóspede não identificado —')}</div>
       <div class="r-meta"><span>${dm(e.check_in)} → ${dm(e.check_out)}</span>
-        <span>${esc(e.hospede_nome || '')}</span>
-        ${e.codigo_canal ? `<span>${esc(e.codigo_canal)}</span>` : ''}</div></div>
+        ${e.hospede_fone ? `<span>📱 ${esc(e.hospede_fone)}</span>` : ''}
+        ${e.codigo_canal ? `<span>${esc(e.codigo_canal)}</span>` : ''}
+        <span class="acao-txt">${dentro
+          ? 'recolher credenciais, avisar a portaria e liberar a limpeza'
+          : 'desfazer credenciais, facial e vaga'}</span></div></div>
     <div class="when"><b>${dm(String(e.cancelada_em || '').slice(0, 10))}</b>${String(e.cancelada_em || '').slice(11, 16)}</div>
     <div class="chips">${chipsHTML(st)}</div></div></div>`;
 }
@@ -1008,14 +1037,19 @@ function rowLimpeza(l, st) {
   const entrada = l.com_entrada ? '<span class="tag entrada">Com entrada</span>' : '';
   const alerta = l.alerta ? `<span class="tag verif">${esc(l.alerta)}</span>` : '';
   const n = l.ocorrencia || '';
+  const paga = { hospede: 'hóspede paga', innvista: 'custo Innvista',
+                 empresa: 'custo da empresa de limpeza' }[l.responsavel] || '';
   const desc = l.origem === 'extra'
     ? (l.tipo_extra === 'repasse' ? 'Repasse por problema de limpeza' : 'Limpeza contratada pelo hóspede')
+      + (paga ? ' · ' + paga : '')
       + (l.valor ? ' · ' + brl(l.valor) : '') + (l.nota ? ' · ' + esc(l.nota) : '')
     : res ? 'Check-out de hóspede'
     : l.origem === 'manutencao' ? 'Manutenção — verificação diferente da de hóspede'
     : 'Bloqueio do proprietário — verificação diferente';
-  return `<div class="row ${l.alerta ? 'sev-warn' : n ? 'sev-warn' : (pendOf(st) ? '' : 'sev-ok')}"><div class="sev"></div><div class="r-in">
-    <div class="r-main"><div class="r-top"><span class="apto">${esc(l.apartamento)}</span>${tag}${entrada}${alerta}
+  const cancelada = l.status === 'cancelada';
+  return `<div class="row ${cancelada ? 'cancelada' : l.alerta ? 'sev-warn' : n ? 'sev-warn' : (pendOf(st) ? '' : 'sev-ok')}"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(l.apartamento)}</span>${tag}${
+      cancelada ? '<span class="tag canc">Cancelada</span>' : entrada + alerta}
       <span class="resid">${esc(l.empresa || 'SEM EMPRESA')}</span></div>
       <div class="guest">${desc}</div></div>
     <div class="when"><b>${esc(l.status)}</b>${dm(l.dia)}</div>
@@ -1026,7 +1060,10 @@ function rowLimpeza(l, st) {
 }
 
 function render() {
-  document.getElementById('hint').textContent = HINTS[view];
+  document.getElementById('hint').textContent =
+    (view === 'prox' && flt === 'semTel')
+      ? 'Reservas sem telefone do hóspede, incluindo os check-ins de hoje.'
+      : HINTS[view];
   document.getElementById('clr').hidden = !(flt || onlyPend || q);
   const el = document.getElementById('rows');
   // Na agenda não existe "pendente" nem busca por hóspede: esconder é mais
@@ -1064,7 +1101,8 @@ function mensagemEmpresa(empresa) {
   const saudacao = (() => { const h = new Date().getHours();
     return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; })();
   const bloco = (dia, titulo) => {
-    const itens = D.limpezas.filter(l => l.dia === dia && (l.empresa || 'SEM EMPRESA') === empresa)
+    const itens = D.limpezas.filter(l => l.dia === dia && ativa(l)
+                              && (l.empresa || 'SEM EMPRESA') === empresa)
                             .map(linhaAgenda).sort(ordemApto);
     return itens.length ? titulo + '\n' + itens.join('\n') : '';
   };
@@ -1077,7 +1115,7 @@ function mensagemEmpresa(empresa) {
 
 function agendaHTML() {
   const dias = [AMANHA, DEPOIS];
-  const daJanela = D.limpezas.filter(l => dias.includes(l.dia));
+  const daJanela = D.limpezas.filter(l => dias.includes(l.dia) && ativa(l));
   if (!daJanela.length)
     return '<div class="empty">Nenhuma limpeza prevista para amanhã ou depois de amanhã. ' +
            'Se isso parecer errado, veja quando foi a última sincronização no topo.</div>';
@@ -1124,8 +1162,8 @@ function renderKpis() {
   const bloqLimp = hojeL.filter(l => l.origem !== 'check-out').length;
   const semLimp = hoje.filter(r => stReserva(r).items.find(i => i.f === 'limpeza').s !== 'done').length;
   const amanhaL = limpDe(AMANHA);
-  const verificar = D.limpezas.filter(l => l.alerta).length;
-  const semEmpresa = D.limpezas.filter(l => !l.empresa).length;
+  const verificar = D.limpezas.filter(l => l.alerta && ativa(l)).length;
+  const semEmpresa = D.limpezas.filter(l => !l.empresa && ativa(l)).length;
   const K = [
     { v: D.novas.length, k: 'novas reservas nas últimas 24h', c: 'is-acc', go: ['novas', null] },
     { v: hoje.length, k: 'check-ins hoje', go: ['hoje', null] },
@@ -1171,11 +1209,19 @@ function abrirExtra(ctx) {
   // que ninguém vai fazer — o hóspede já foi embora e a diária acabou.
   d.min = HOJE; d.max = ctx.ate; d.value = HOJE < ctx.ate ? HOJE : ctx.ate;
   document.getElementById('exTipo').value = 'contratada';
+  document.getElementById('exQuemPaga').value = 'hospede';
   document.getElementById('exValor').value = '';
   document.getElementById('exNota').value = '';
   document.getElementById('exErro').textContent = '';
   avisoMesmoDia();
   dlg.showModal();
+}
+
+// Contratada = o hóspede paga. Repasse = erro nosso ou da empresa, e o
+// padrão fica em Innvista porque culpar a empresa é decisão, não default.
+function sugerirQuemPaga() {
+  const tipo = document.getElementById('exTipo').value;
+  document.getElementById('exQuemPaga').value = tipo === 'contratada' ? 'hospede' : 'innvista';
 }
 
 function avisoMesmoDia() {
@@ -1200,6 +1246,7 @@ async function salvarExtra() {
     dia: data, listing_id: extraCtx.lid, empresa: extraCtx.emp || null,
     origem: 'extra', origem_id: extraCtx.reserva, status: 'pendente',
     tipo_extra: document.getElementById('exTipo').value,
+    responsavel: document.getElementById('exQuemPaga').value,
     valor: valor,
     nota: document.getElementById('exNota').value.trim() || null,
     // Limpeza para hoje entra com alerta: a empresa montou a rota de manhã e
@@ -1256,6 +1303,16 @@ document.getElementById('rows').addEventListener('click', async e => {
     mudarStatusLimpeza(Number(b.dataset.id), novo ? 'feita' : 'pendente').then(carregar);
     return;
   }
+  if (b.dataset.f === '__cancelar') {
+    // Sem confirm(): diálogo nativo trava a página inteira, e a ação é
+    // reversível ali mesmo pelo botão Reativar.
+    mudarStatusLimpeza(Number(b.dataset.id), 'cancelada').then(carregar);
+    return;
+  }
+  if (b.dataset.f === '__reativar') {
+    mudarStatusLimpeza(Number(b.dataset.id), 'pendente').then(carregar);
+    return;
+  }
   marcar(b, b.dataset.tipo, b.dataset.id, b.dataset.f, novo);
 });
 let debounce;
@@ -1267,6 +1324,7 @@ document.getElementById('rows').addEventListener('input', e => {
   debounce = setTimeout(() => anotarOcorrencia(Number(t.dataset.limpeza), t.value.trim()), 700);
 });
 document.getElementById('exData').addEventListener('change', avisoMesmoDia);
+document.getElementById('exTipo').addEventListener('change', sugerirQuemPaga);
 document.getElementById('exSalvar').addEventListener('click', salvarExtra);
 document.getElementById('exCancelar').addEventListener('click',
   () => document.getElementById('dlgExtra').close());
