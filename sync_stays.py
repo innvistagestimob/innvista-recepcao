@@ -2,9 +2,15 @@
 """
 INNVISTA — sincronização Stays → Postgres
 
-Roda no GitHub Actions a cada 15 minutos. Substitui o sync_stays do
-Apps Script, e com ele somem os limites que atrapalhavam lá: não há
-teto de 6 minutos por execução nem cota de 90 minutos por dia.
+Roda no GitHub Actions a cada 15 minutos, das 09h à meia-noite de São
+Paulo. Substitui o sync_stays do Apps Script, e com ele somem os limites
+que atrapalhavam lá: não há teto de 6 minutos por execução nem cota de
+90 minutos por dia.
+
+A janela não é preguiça: no plano gratuito o Actions dá 2.000 minutos por
+mês e cobra cada rodada como 1 minuto cheio. 24 horas de sincronização
+custariam ~2.900 min/mês e a conta pararia no dia 20. Das 09h à meia-noite
+são ~1.825 min/mês — cabe, e cobre o horário em que existe recepção.
 
 Passos independentes. Se um falhar, os outros continuam — na planilha,
 um erro no meio deixava tudo pela metade sem avisar.
@@ -53,7 +59,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v3.6 (cadastro pela tabela do Supabase)"
+VERSAO = "v3.7 (janela 09h-00h + HORA_CATALOGO)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -73,6 +79,11 @@ PAUSA_PAGINA = 0.15        # respiro entre páginas, para não irritar a API
 # você no editor de tabelas; lida a cada rodada. Se não existir, o passo
 # sai em silêncio e nada quebra.
 TABELA_CADASTRO = "cadastros_apartamentos"
+
+# Hora (de São Paulo) em que o catálogo de imóveis é recarregado da Stays.
+# Tem de ser uma hora em que o agendamento roda — ver o cron no sync.yml.
+# Com a janela 09h–00h, 9 é a primeira rodada do dia.
+HORA_CATALOGO = 9
 
 
 def sessao() -> requests.Session:
@@ -831,7 +842,14 @@ def main() -> int:
 
     try:
         # Catálogo: 1×/dia, ou quando pedido.
-        if args.completo or agora.hour == 4:
+        #
+        # A hora precisa cair DENTRO da janela do agendamento. Enquanto o
+        # cron era 24h, 4 da manhã era ótimo: ninguém usando. Com a janela
+        # de 09h à meia-noite, a hora 4 nunca acontece — e o catálogo
+        # deixaria de ser atualizado para sempre, sem erro nenhum. Imóvel
+        # novo simplesmente não apareceria. Por isso HORA_CATALOGO é uma
+        # constante junto das outras: quem mexer no cron vê que existe.
+        if args.completo or agora.hour == HORA_CATALOGO:
             passo_catalogo()
         por_id, por_nome = mapa_listings()
         if not por_id:
