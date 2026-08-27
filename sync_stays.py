@@ -34,7 +34,11 @@ import base64
 import argparse
 from datetime import date, datetime, timedelta, timezone
 
+import time
+
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # --------------------------------------------------------------------
 # Configuração
@@ -52,6 +56,35 @@ JANELA_DEPARTURE_FRENTE = 15
 
 TEMPO_LIMITE = 60          # segundos por chamada HTTP
 LOTE = 500                 # registros por gravação no Postgres
+PAUSA_PAGINA = 0.15        # respiro entre páginas, para não irritar a API
+
+
+def sessao() -> requests.Session:
+    """
+    Sessão com retentativa automática.
+
+    "Connection reset by peer" é a API do outro lado derrubando a conexão —
+    acontece em rajada de chamadas seguidas, e some sozinho quando se tenta
+    de novo. Sem isto, uma queda de rede de um segundo derruba a
+    sincronização inteira e o time fica com dado velho até a próxima rodada.
+
+    São 4 tentativas com espera crescente (0,5s, 1s, 2s, 4s), cobrindo
+    tanto erro de conexão quanto 429 e 5xx.
+    """
+    s = requests.Session()
+    politica = Retry(
+        total=4, connect=4, read=4, backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "POST", "PATCH"]),
+        raise_on_status=False,
+    )
+    adaptador = HTTPAdapter(max_retries=politica, pool_connections=4, pool_maxsize=8)
+    s.mount("https://", adaptador)
+    s.mount("http://", adaptador)
+    return s
+
+
+HTTP = sessao()
 
 
 def env(nome: str) -> str:
@@ -137,7 +170,7 @@ def stays_export(de: str, ate: str, date_type: str) -> list:
     Só aceita reserved, booked e contract. Um type=canceled aqui é
     ignorado em silêncio: canceladas vêm pelo stays_buscar.
     """
-    r = requests.post(
+    r = HTTP.post(
         f"{STAYS}/external/v1/booking/reservations-export",
         headers={"Authorization": STAYS_AUTH, "Accept": "application/json"},
         json={"from": de, "to": ate, "dateType": date_type},
@@ -164,7 +197,7 @@ def stays_buscar(de: str, ate: str, date_type: str, tipos: list) -> list:
                   ("limit", limite), ("skip", pulo)]
         params += [("type", t) for t in tipos]
 
-        r = requests.get(
+        r = HTTP.get(
             f"{STAYS}/external/v1/booking/reservations",
             headers={"Authorization": STAYS_AUTH, "Accept": "application/json"},
             params=params, timeout=TEMPO_LIMITE,
@@ -177,6 +210,7 @@ def stays_buscar(de: str, ate: str, date_type: str, tipos: list) -> list:
         if len(pagina) < limite:
             break
         pulo += limite
+        time.sleep(PAUSA_PAGINA)
         if pulo > 5000:                      # trava de segurança
             log("stays_buscar: passou de 5000 registros, parando")
             break
@@ -186,7 +220,7 @@ def stays_buscar(de: str, ate: str, date_type: str, tipos: list) -> list:
 def stays_listings() -> list:
     saida, pulo, limite = [], 0, 100
     while True:
-        r = requests.get(
+        r = HTTP.get(
             f"{STAYS}/external/v1/content/listings",
             headers={"Authorization": STAYS_AUTH, "Accept": "application/json"},
             params={"status": "active", "limit": limite, "skip": pulo},
@@ -200,6 +234,7 @@ def stays_listings() -> list:
         if len(pagina) < limite:
             break
         pulo += limite
+        time.sleep(PAUSA_PAGINA)
     return saida
 
 
@@ -218,7 +253,7 @@ def gravar(tabela: str, linhas: list, conflito: str) -> int:
     total = 0
     for i in range(0, len(linhas), LOTE):
         pedaco = linhas[i:i + LOTE]
-        r = requests.post(
+        r = HTTP.post(
             f"{SB}/rest/v1/{tabela}",
             headers={**SB_HEAD,
                      "Prefer": f"resolution=merge-duplicates,return=minimal"},
@@ -233,14 +268,14 @@ def gravar(tabela: str, linhas: list, conflito: str) -> int:
 
 
 def consultar(tabela: str, params: dict) -> list:
-    r = requests.get(f"{SB}/rest/v1/{tabela}", headers=SB_HEAD,
+    r = HTTP.get(f"{SB}/rest/v1/{tabela}", headers=SB_HEAD,
                      params=params, timeout=TEMPO_LIMITE)
     r.raise_for_status()
     return r.json()
 
 
 def atualizar(tabela: str, filtro: dict, valores: dict) -> None:
-    r = requests.patch(f"{SB}/rest/v1/{tabela}", headers={**SB_HEAD, "Prefer": "return=minimal"},
+    r = HTTP.patch(f"{SB}/rest/v1/{tabela}", headers={**SB_HEAD, "Prefer": "return=minimal"},
                        params=filtro, data=json.dumps(valores, default=str),
                        timeout=TEMPO_LIMITE)
     if r.status_code >= 300:
@@ -266,6 +301,36 @@ def normalizar_apto(nome: str) -> str:
 
 def so_data(valor) -> str | None:
     return str(valor)[:10] if valor else None
+
+
+def id_do_imovel(res: dict, por_nome: dict) -> str | None:
+    """
+    Descobre a qual imóvel a reserva pertence.
+
+    Aqui estava o bug do "reservas: 0". Os dois endpoints da Stays
+    devolvem o imóvel de formas DIFERENTES:
+
+        GET  /booking/reservations         → res["_idlisting"]  (só o id)
+        POST /booking/reservations-export  → res["listing"]     (objeto)
+
+    O código só olhava _idlisting. Como as reservas ativas vêm do export,
+    o id vinha vazio, nenhuma casava com o catálogo e todas eram
+    descartadas em silêncio — o log dizia "0 ativas gravadas" e seguia
+    como se fosse um dia sem reservas.
+
+    A terceira tentativa, pelo nome, é rede de segurança: se um dia a
+    Stays mudar o formato de novo, o casamento ainda acontece.
+    """
+    if res.get("_idlisting"):
+        return res["_idlisting"]
+
+    listing = res.get("listing") or {}
+    for campo in ("_id", "id"):
+        if listing.get(campo):
+            return listing[campo]
+
+    nome = normalizar_apto(listing.get("internalName") or "")
+    return por_nome.get(nome)
 
 
 def montar_reserva(res: dict, listing_id: str | None) -> dict:
@@ -316,36 +381,54 @@ def passo_catalogo() -> dict:
     return por_id
 
 
-def mapa_listings() -> dict:
-    """id → nome, direto do banco (evita re-chamar a Stays a cada rodada)."""
-    return {l["id"]: l["nome"] for l in consultar("listings", {"select": "id,nome"})}
+def mapa_listings() -> tuple:
+    """Do banco, nos dois sentidos: id → nome e nome → id."""
+    linhas = consultar("listings", {"select": "id,nome"})
+    return ({l["id"]: l["nome"] for l in linhas},
+            {l["nome"]: l["id"] for l in linhas})
 
 
-def passo_reservas(validos: set) -> int:
+def passo_reservas(validos: set, por_nome: dict) -> int:
     lotes = [
         stays_export(dia(-JANELA_ARRIVAL_ATRAS), dia(JANELA_ARRIVAL_FRENTE), "arrival"),
         stays_export(dia(-JANELA_DEPARTURE_ATRAS), dia(JANELA_DEPARTURE_FRENTE), "departure"),
     ]
-    vistos, linhas = set(), []
+    brutas = sum(len(l) for l in lotes)
+
+    vistos, linhas, sem_imovel = set(), [], 0
     for lote in lotes:
         for res in lote:
             ident = res.get("id") or res.get("_id")
             if not ident or ident in vistos:
                 continue
             vistos.add(ident)
-            listing_id = res.get("_idlisting")
+
+            listing_id = id_do_imovel(res, por_nome)
             if listing_id not in validos:
-                continue                      # imóvel desativado: não gera trabalho
+                sem_imovel += 1               # imóvel desativado, ou não casou
+                continue
             r = montar_reserva(res, listing_id)
             if r["check_in"] and r["check_out"]:
                 r["status"] = "ativa"
                 linhas.append(r)
+
     gravar("reservations", linhas, "id")
-    log(f"reservas: {len(linhas)} ativas gravadas")
+    log(f"reservas: {len(linhas)} ativas gravadas "
+        f"(de {brutas} recebidas, {sem_imovel} sem imóvel no catálogo)")
+
+    # Descartar quase tudo por falta de imóvel é sinal de que o casamento
+    # quebrou, não de que o dia foi fraco. Melhor gritar do que seguir
+    # gravando zero todo dia sem ninguém perceber.
+    if brutas and not linhas:
+        raise RuntimeError(
+            f"A Stays devolveu {brutas} reservas e nenhuma casou com o catálogo "
+            f"({len(validos)} imóveis). Provável mudança no formato do campo de "
+            f"imóvel — confira id_do_imovel().")
+
     return len(linhas)
 
 
-def passo_reconciliacao(validos: set) -> int:
+def passo_reconciliacao(validos: set, por_nome: dict) -> int:
     """
     Canceladas, alteradas e bloqueios.
 
@@ -366,7 +449,7 @@ def passo_reconciliacao(validos: set) -> int:
     linhas = []
     for res in canceladas:
         ident = res.get("id") or res.get("_id")
-        listing_id = res.get("_idlisting")
+        listing_id = id_do_imovel(res, por_nome)
         if not ident or listing_id not in validos:
             continue
 
@@ -396,7 +479,7 @@ def passo_reconciliacao(validos: set) -> int:
     bloqueios, vistos = [], set()
     for b in brutos:
         ident = b.get("id") or b.get("_id")
-        listing_id = b.get("_idlisting")
+        listing_id = id_do_imovel(b, por_nome)
         if not ident or ident in vistos or listing_id not in validos:
             continue
         vistos.add(ident)
@@ -438,7 +521,7 @@ def passo_limpezas(validos: set) -> int:
     # ignoreDuplicates: se a limpeza do dia já existe, não sobrescreve o
     # status nem a ocorrência que o time anotou.
     if linhas:
-        r = requests.post(
+        r = HTTP.post(
             f"{SB}/rest/v1/cleanings",
             headers={**SB_HEAD, "Prefer": "resolution=ignore-duplicates,return=minimal"},
             params={"on_conflict": "dia,listing_id"},
@@ -508,7 +591,7 @@ def main() -> int:
         return 0
 
     agora = datetime.now(TZ)
-    run = requests.post(f"{SB}/rest/v1/sync_runs", headers={**SB_HEAD, "Prefer": "return=representation"},
+    run = HTTP.post(f"{SB}/rest/v1/sync_runs", headers={**SB_HEAD, "Prefer": "return=representation"},
                         data=json.dumps({"inicio": agora.isoformat()}), timeout=TEMPO_LIMITE)
     run_id = run.json()[0]["id"] if run.status_code < 300 else None
 
@@ -516,19 +599,20 @@ def main() -> int:
         # Catálogo: 1×/dia, ou quando pedido.
         if args.completo or agora.hour == 4:
             passo_catalogo()
-        validos = set(mapa_listings().keys())
-        if not validos:
+        por_id, por_nome = mapa_listings()
+        if not por_id:
             passo_catalogo()
-            validos = set(mapa_listings().keys())
+            por_id, por_nome = mapa_listings()
+        validos = set(por_id.keys())
 
-        n_res = passo_reservas(validos)
+        n_res = passo_reservas(validos, por_nome)
 
         # Reconciliação: 1×/hora. É o passo que descobre cancelamento e
         # alteração — não precisa ser a cada 15 minutos, mas não pode
         # ficar mais de uma hora sem rodar.
         n_eventos = 0
         if args.completo or agora.minute < 15:
-            n_eventos = passo_reconciliacao(validos)
+            n_eventos = passo_reconciliacao(validos, por_nome)
 
         passo_limpezas(validos)
 
