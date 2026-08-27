@@ -167,6 +167,19 @@ button{font:inherit;color:inherit;cursor:pointer}
 .demo b{color:var(--accent-ink)}
 </style>
 <style>
+/*
+ * O atributo hidden do HTML aplica display:none pela folha de estilo do
+ * navegador — que perde para QUALQUER regra nossa que defina display.
+ *
+ * Era o caso de .tela{display:grid}: mesmo com hidden, a tela de login
+ * continuava desenhada, por cima do painel. Quem entrava via a tela de
+ * login de novo e concluía que o login tinha falhado — quando na verdade
+ * o painel estava logo abaixo, fora da área visível.
+ *
+ * Esta linha vale para todos os elementos que a página esconde.
+ */
+[hidden] { display: none !important; }
+
 /* --- login e estados que só existem na versão conectada --- */
 .tela{min-height:100vh;display:grid;place-items:center;padding:24px}
 .cartao{background:var(--surface);border:1px solid var(--line);border-radius:12px;
