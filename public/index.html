@@ -189,6 +189,7 @@ button{font:inherit;color:inherit;cursor:pointer}
   border-radius:8px;padding:11px 14px;font-size:14.5px;margin:0 0 9px}
 .campo::placeholder{color:var(--muted)}
 #formEmail{margin:0}
+.rodape{font-size:12px;color:var(--muted);margin:20px 0 0;line-height:1.5}
 .usuario{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
 .usuario button{border:none;background:none;color:var(--accent);
   font-size:12.5px;text-decoration:underline;padding:0}
@@ -222,22 +223,23 @@ const CONFIG = {
 <div id="login" class="tela" hidden>
   <div class="cartao">
     <h1>Recepção Innvista</h1>
-    <p>Entre com a conta da Innvista para ver as reservas do dia.</p>
-    <div id="loginErro" class="erro" hidden></div>
-    <div id="loginOk" class="ok" hidden></div>
+    <p>Entre para ver as reservas e as pendências do dia.</p>
 
-    <button class="botao principal" id="entrar">Entrar com Google</button>
+    <div id="loginErro" class="erro" hidden></div>
+
+    <form id="formSenha">
+      <input class="campo" id="email" type="email" required
+             placeholder="E-mail" autocomplete="username">
+      <input class="campo" id="senha" type="password" required
+             placeholder="Senha" autocomplete="current-password">
+      <button class="botao principal" type="submit" id="btEntrar">Entrar</button>
+    </form>
 
     <div class="ou"><span>ou</span></div>
+    <button class="botao" id="entrar">Entrar com Google</button>
 
-    <!-- Link por e-mail: não exige projeto no Google Cloud nem cliente
-         OAuth. Para uma recepção de cinco pessoas costuma ser o caminho
-         mais curto — a pessoa digita o e-mail e recebe um link. -->
-    <form id="formEmail">
-      <input class="campo" id="email" type="email" required
-             placeholder="seu.email@innvista.com" autocomplete="email">
-      <button class="botao" type="submit" id="btEmail">Receber link por e-mail</button>
-    </form>
+    <p class="rodape">Esqueceu a senha? Fale com o Elio — a troca é feita no
+      painel do sistema, sem envio de e-mail.</p>
   </div>
 </div>
 
@@ -297,7 +299,16 @@ if (typeof supabase === 'undefined') {
   throw new Error('supabase-js não carregou');
 }
 
-const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON);
+const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
+  auth: {
+    // O link do e-mail volta para cá trazendo a sessão na própria URL.
+    // Sem isto explícito, dependeria do padrão da biblioteca — e o padrão
+    // mudou entre versões.
+    detectSessionInUrl: true,
+    persistSession: true,
+    autoRefreshToken: true
+  }
+});
 
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 const HOJE = hojeISO();
@@ -332,29 +343,71 @@ document.getElementById('sair').addEventListener('click', async () => {
 });
 function mostrarErroLogin(msg) {
   const e = document.getElementById('loginErro');
-  e.textContent = msg; e.hidden = false;
-  document.getElementById('loginOk').hidden = true;
+  e.textContent = msg;
+  e.style.whiteSpace = 'pre-wrap';   // preserva as quebras das mensagens longas
+  e.hidden = false;
 }
 
-document.getElementById('formEmail').addEventListener('submit', async ev => {
+/**
+ * Erro que volta do Supabase na própria URL.
+ *
+ * Quando o login falha, o Supabase devolve a pessoa para cá com
+ * ?error=...&error_description=... (ou o mesmo no #). Sem ler isso, a
+ * página mostraria o login de novo sem dizer nada — o que transforma um
+ * problema de cinco segundos numa noite de tentativa e erro.
+ */
+function erroNaURL() {
+  const busca = new URLSearchParams(location.search);
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  // error_code é o específico (otp_expired); error é o genérico
+  // (access_denied). O específico primeiro, senão a dica sai errada.
+  const cod = busca.get('error_code') || hash.get('error_code')
+            || busca.get('error') || hash.get('error');
+  if (!cod) return null;
+  const desc = busca.get('error_description') || hash.get('error_description') || '';
+  return { cod: cod, desc: decodeURIComponent(desc.replace(/\+/g, ' ')) };
+}
+
+const DICAS = {
+  'access_denied': 'O Supabase recusou a volta. Quase sempre é o endereço deste site faltando em Authentication → URL Configuration → Redirect URLs.',
+  'over_email_send_rate_limit': 'Limite de e-mails do plano gratuito estourado. Com login por senha isso não acontece mais — nenhum e-mail é enviado.',
+  'validation_failed': 'O Supabase não aceitou o pedido. Confira se o provedor Email está ativado em Authentication → Sign In / Providers.'
+};
+
+document.getElementById('formSenha').addEventListener('submit', async ev => {
   ev.preventDefault();
-  const bt = document.getElementById('btEmail');
+  const bt = document.getElementById('btEntrar');
   const email = document.getElementById('email').value.trim();
-  bt.disabled = true; bt.textContent = 'Enviando…';
+  const senha = document.getElementById('senha').value;
 
-  const { error } = await sb.auth.signInWithOtp({
-    email, options: { emailRedirectTo: location.href.split('#')[0] }
-  });
+  bt.disabled = true; bt.textContent = 'Entrando…';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
+  bt.disabled = false; bt.textContent = 'Entrar';
 
-  bt.disabled = false; bt.textContent = 'Receber link por e-mail';
-  if (error) { mostrarErroLogin(error.message); return; }
-
-  const ok = document.getElementById('loginOk');
-  ok.innerHTML = '<b>Link enviado para ' + esc(email) + '.</b><br>' +
-    'Abra o e-mail e clique no link para entrar. Ele vale por uma hora.';
-  ok.hidden = false;
-  document.getElementById('loginErro').hidden = true;
+  if (error) { mostrarErroLogin(traduzir(error.message)); return; }
+  if (data && data.session) abrirApp(data.session);
 });
+
+/**
+ * Mensagens do Supabase vêm em inglês e algumas são enigmáticas.
+ * Quem está no balcão às 8h precisa saber o que fazer, não o código do erro.
+ */
+function traduzir(msg) {
+  const m = String(msg || '');
+  if (/invalid login credentials/i.test(m))
+    return 'E-mail ou senha incorretos.';
+  if (/email not confirmed/i.test(m))
+    return 'Este usuário ainda não foi confirmado.\n\n' +
+           'No Supabase, em Authentication → Users, abra o usuário e marque como confirmado.';
+  if (/rate limit/i.test(m))
+    return 'Muitas tentativas seguidas. Espere alguns minutos.';
+  if (/user not found/i.test(m))
+    return 'Este e-mail não está cadastrado.\n\n' +
+           'Os usuários são criados no Supabase, em Authentication → Users → Add user.';
+  if (/failed to fetch|networkerror/i.test(m))
+    return 'Sem conexão com o servidor. Verifique a internet e tente de novo.';
+  return m;
+}
 
 (async function iniciar() {
   if (CONFIG.SUPABASE_ANON.startsWith('sb_secret_')) {
@@ -368,17 +421,51 @@ document.getElementById('formEmail').addEventListener('submit', async ev => {
     mostrarErroLogin('Falta preencher o bloco CONFIG no topo deste arquivo com a URL do projeto e a chave anon.');
     return;
   }
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) { document.getElementById('login').hidden = false; return; }
+  const falha = erroNaURL();
+  if (falha) {
+    document.getElementById('login').hidden = false;
+    const dica = DICAS[falha.cod] || '';
+    mostrarErroLogin(
+      'O login não foi concluído.\n\n' +
+      'Código: ' + falha.cod + (falha.desc ? '\n' + falha.desc : '') +
+      (dica ? '\n\n' + dica : '') +
+      '\n\nEndereço deste site: ' + location.origin +
+      '\nEle precisa estar em Authentication → URL Configuration, com /** no fim.');
+    history.replaceState(null, '', location.pathname);
+    return;
+  }
 
-  usuario = session.user;
+  // Entra quando a sessão aparecer, seja agora ou depois que a biblioteca
+  // terminar de ler a URL do link do e-mail. Só o getSession() de uma vez
+  // podia rodar antes disso e mandar a pessoa de volta ao login.
+  sb.auth.onAuthStateChange((evento, sessao) => {
+    if (sessao && !usuario) abrirApp(sessao);
+  });
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) { abrirApp(session); return; }
+
+  // Nenhuma sessão e nenhum erro: pode ser que a biblioteca ainda esteja
+  // processando o link. Dá um instante antes de desistir e mostrar o login.
+  setTimeout(async () => {
+    const { data: { session: tardia } } = await sb.auth.getSession();
+    if (tardia) abrirApp(tardia);
+    else document.getElementById('login').hidden = false;
+  }, 700);
+})();
+
+async function abrirApp(sessao) {
+  if (usuario) return;
+  usuario = sessao.user;
+  history.replaceState(null, '', location.pathname);
+  document.getElementById('login').hidden = true;
   document.getElementById('quem').textContent = usuario.email;
   document.getElementById('app').hidden = false;
   await carregar();
   ligarTempoReal();
   setInterval(carregar, 15 * 60 * 1000);   // rede de segurança, além do tempo real
   contador();
-})();
+}
 
 /* ---------------- leitura ---------------- */
 
