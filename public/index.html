@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recepção Innvista</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#F4F7F9;--surface:#FFFFFF;--surface-2:#EDF2F5;--surface-3:#E3EAEF;
+  --ink:#131C25;--ink-2:#3B4B59;--muted:#6A7C8B;--line:#DBE3E9;--line-2:#C2CDD6;
+  --accent:#0E7C7B;--accent-soft:#DFF0EF;--accent-ink:#0A5F5E;
+  --crit:#A32218;--crit-soft:#FAE6E4;--crit-line:#E8B5B0;
+  --warn:#8A5200;--warn-soft:#FAF0DB;--warn-line:#E6CB94;
+  --good:#1B6340;--good-soft:#E0F0E8;--good-line:#A8D4BE;
+  --viol:#5B3A9E;--viol-soft:#EEE8FA;--viol-line:#C9B8EE;
+  --shadow:0 1px 2px rgba(19,28,37,.06),0 4px 12px rgba(19,28,37,.05);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0D1319;--surface:#141C24;--surface-2:#1B242D;--surface-3:#232E38;
+  --ink:#E6ECF2;--ink-2:#B4C1CC;--muted:#8496A4;--line:#25313B;--line-2:#35434F;
+  --accent:#3FB3AF;--accent-soft:#11302F;--accent-ink:#5FC9C5;
+  --crit:#F08B80;--crit-soft:#331816;--crit-line:#5A2A25;
+  --warn:#E0AC5C;--warn-soft:#2D2211;--warn-line:#513E1C;
+  --good:#6FC79A;--good-soft:#13281E;--good-line:#254A36;
+  --viol:#B49BEE;--viol-soft:#211936;--viol-line:#3B2E5C;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25);
+}}
+:root[data-theme="dark"]{
+  --ground:#0D1319;--surface:#141C24;--surface-2:#1B242D;--surface-3:#232E38;
+  --ink:#E6ECF2;--ink-2:#B4C1CC;--muted:#8496A4;--line:#25313B;--line-2:#35434F;
+  --accent:#3FB3AF;--accent-soft:#11302F;--accent-ink:#5FC9C5;
+  --crit:#F08B80;--crit-soft:#331816;--crit-line:#5A2A25;
+  --warn:#E0AC5C;--warn-soft:#2D2211;--warn-line:#513E1C;
+  --good:#6FC79A;--good-soft:#13281E;--good-line:#254A36;
+  --viol:#B49BEE;--viol-soft:#211936;--viol-line:#3B2E5C;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.wrap{max-width:1240px;margin:0 auto;padding:0 22px}
+
+.top{position:sticky;top:0;z-index:20;background:var(--surface);
+  border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.top-in{max-width:1240px;margin:0 auto;padding:14px 22px 0;
+  display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px}
+.brand{display:flex;align-items:baseline;gap:11px;margin-right:auto}
+.brand h1{font-family:"Archivo",sans-serif;font-weight:700;font-size:19px;letter-spacing:-.015em;margin:0}
+.brand .sub{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted)}
+.sync{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--good);
+  box-shadow:0 0 0 3px var(--good-soft);flex:none}
+@media (prefers-reduced-motion:no-preference){
+  .dot{animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}}
+.sync b{color:var(--ink-2);font-weight:500}
+.progress{height:2px;background:var(--surface-3);max-width:1240px;margin:12px auto 0}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width 1s linear}
+
+.kpis{padding:20px 0 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(162px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:9px;
+  padding:14px 16px;box-shadow:var(--shadow);text-align:left;
+  transition:border-color .12s,transform .12s}
+.kpi:hover{border-color:var(--accent);transform:translateY(-1px)}
+.kpi[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft),var(--shadow)}
+.kpi .v{font-family:"Archivo",sans-serif;font-weight:700;font-size:29px;line-height:1;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi .k{font-size:12.5px;color:var(--muted);margin-top:7px;line-height:1.35}
+.kpi .x{font-size:11.5px;color:var(--muted);margin-top:4px;font-family:"IBM Plex Mono",monospace}
+.kpi.is-crit{border-color:var(--crit-line)}.kpi.is-crit .v{color:var(--crit)}
+.kpi.is-warn{border-color:var(--warn-line)}.kpi.is-warn .v{color:var(--warn)}
+.kpi.is-viol{border-color:var(--viol-line)}.kpi.is-viol .v{color:var(--viol)}
+.kpi.is-acc .v{color:var(--accent)}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  box-shadow:var(--shadow);overflow:hidden;margin:20px 0 60px}
+.tabbar{display:flex;gap:0;overflow-x:auto;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.tabbar button{border:none;background:none;padding:13px 17px;font-size:13.5px;font-weight:500;
+  color:var(--muted);white-space:nowrap;border-bottom:2px solid transparent;flex:none}
+.tabbar button[aria-selected="true"]{color:var(--ink);background:var(--surface);
+  border-bottom-color:var(--accent);font-weight:600}
+.tabbar .n{font-family:"IBM Plex Mono",monospace;font-size:11px;margin-left:7px;
+  background:var(--surface-3);padding:1px 7px;border-radius:20px;color:var(--muted)}
+.tabbar button[aria-selected="true"] .n{background:var(--accent-soft);color:var(--accent-ink)}
+
+.p-head{padding:13px 18px;border-bottom:1px solid var(--line);display:flex;
+  flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--surface)}
+.hint{font-size:13px;color:var(--muted);flex:1 1 220px;min-width:0}
+.srch{border:1px solid var(--line);background:var(--ground);color:var(--ink);border-radius:6px;
+  padding:6px 11px;font-size:13.5px;width:180px}
+.srch::placeholder{color:var(--muted)}
+.toggle{border:1px solid var(--line);background:var(--surface);border-radius:6px;
+  padding:6px 12px;font-size:13px;color:var(--ink-2)}
+.toggle[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);
+  color:var(--accent-ink);font-weight:500}
+.clr{border:none;background:none;color:var(--accent);font-size:13px;padding:6px 4px;text-decoration:underline}
+
+.banner{margin:0;padding:12px 18px;background:var(--crit-soft);border-bottom:1px solid var(--crit-line);
+  font-size:13.5px;color:var(--ink);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.banner b{color:var(--crit)}
+.banner button{border:1px solid var(--crit-line);background:var(--surface);color:var(--crit);
+  border-radius:5px;padding:3px 10px;font-size:12.5px;font-weight:500}
+
+.row{display:grid;grid-template-columns:4px 1fr;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.sev{background:var(--line-2)}
+.row.sev-crit .sev{background:var(--crit)}
+.row.sev-warn .sev{background:var(--warn)}
+.row.sev-ok .sev{background:var(--good)}
+.row.sev-viol .sev{background:var(--viol)}
+.r-in{padding:14px 18px;display:flex;flex-wrap:wrap;gap:11px 18px;align-items:flex-start}
+.r-main{flex:1 1 260px;min-width:0}
+.r-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 11px}
+.apto{font-family:"Archivo",sans-serif;font-weight:600;font-size:15.5px;letter-spacing:-.005em}
+.resid{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
+.tag{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;padding:2px 7px;border-radius:3px;background:var(--surface-3);color:var(--muted)}
+.tag.airbnb{background:var(--crit-soft);color:var(--crit)}
+.tag.bcom{background:var(--accent-soft);color:var(--accent-ink)}
+.tag.expedia{background:var(--warn-soft);color:var(--warn)}
+.tag.alt{background:var(--warn-soft);color:var(--warn)}
+.tag.canc{background:var(--crit-soft);color:var(--crit)}
+.tag.bloq{background:var(--viol-soft);color:var(--viol)}
+.tag.manut{background:var(--warn-soft);color:var(--warn)}
+.tag.res{background:var(--surface-3);color:var(--muted)}
+.guest{font-size:14px;color:var(--ink-2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted)}
+.r-meta a{color:var(--accent);text-decoration:none}
+.r-meta a:hover{text-decoration:underline}
+.r-meta .miss{color:var(--crit)}
+.when{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);
+  flex:none;text-align:right;min-width:78px}
+.when b{display:block;font-family:"Archivo",sans-serif;font-size:12.5px;font-weight:600;
+  letter-spacing:.02em;margin-bottom:2px}
+.when.hoje b{color:var(--crit)}.when.amanha b{color:var(--warn)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 100%}
+.chip{border:1px solid var(--line-2);background:var(--surface);border-radius:20px;padding:4px 11px;
+  font-size:12px;font-weight:500;color:var(--muted);display:inline-flex;align-items:center;gap:6px;
+  transition:background .12s,border-color .12s}
+.chip .mk{width:13px;height:13px;border-radius:50%;border:1.5px solid currentColor;
+  display:grid;place-items:center;font-size:8px;line-height:1;flex:none}
+.chip[data-s="done"]{background:var(--good-soft);border-color:var(--good-line);color:var(--good)}
+.chip[data-s="done"] .mk{background:var(--good);border-color:var(--good);color:var(--good-soft)}
+.chip[data-s="pend"]{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn)}
+.chip[data-s="prog"]{background:var(--surface-3);border-color:var(--line-2);color:var(--ink-2)}
+.chip[data-s="na"]{opacity:.42;border-style:dashed;cursor:default}
+.chip:not([data-s="na"]):hover{border-color:var(--accent)}
+
+.occ{flex:1 1 100%;display:flex;gap:8px;align-items:flex-start;margin-top:2px}
+.occ textarea{flex:1;min-height:34px;border:1px solid var(--line);background:var(--ground);
+  color:var(--ink);border-radius:6px;padding:7px 10px;font:inherit;font-size:13px;resize:vertical}
+.occ textarea::placeholder{color:var(--muted)}
+.occ textarea.has{border-color:var(--warn);background:var(--warn-soft)}
+.empty{padding:38px 18px;text-align:center;color:var(--muted);font-size:14px}
+.demo{padding:0 0 44px}
+.demo div{background:var(--accent-soft);border:1px solid var(--accent);color:var(--ink);
+  border-radius:9px;padding:14px 18px;font-size:13.5px;line-height:1.55}
+.demo b{color:var(--accent-ink)}
+</style>
+<style>
+/* --- login e estados que só existem na versão conectada --- */
+.tela{min-height:100vh;display:grid;place-items:center;padding:24px}
+.cartao{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--shadow);padding:36px 34px;max-width:380px;width:100%;text-align:center}
+.cartao h1{font-family:"Archivo",sans-serif;font-weight:700;font-size:24px;
+  letter-spacing:-.02em;margin:0 0 6px}
+.cartao p{color:var(--muted);font-size:14px;margin:0 0 24px;line-height:1.5}
+.botao{width:100%;border:1px solid var(--line-2);background:var(--surface);
+  border-radius:8px;padding:11px 16px;font-size:14.5px;font-weight:500;
+  display:flex;align-items:center;justify-content:center;gap:9px}
+.botao:hover{border-color:var(--accent);background:var(--accent-soft)}
+.botao.principal{background:var(--accent);border-color:var(--accent);color:#fff}
+.erro{background:var(--crit-soft);border:1px solid var(--crit-line);color:var(--crit);
+  border-radius:8px;padding:12px 15px;font-size:13.5px;margin:0 0 18px;text-align:left;line-height:1.5}
+.usuario{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+.usuario button{border:none;background:none;color:var(--accent);
+  font-size:12.5px;text-decoration:underline;padding:0}
+.carregando{padding:48px 18px;text-align:center;color:var(--muted);font-size:14px}
+.chip.salvando{opacity:.5;pointer-events:none}
+.chip.falhou{background:var(--crit-soft)!important;border-color:var(--crit)!important;
+  color:var(--crit)!important}
+.aviso{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;
+  background:var(--crit);color:#fff;border-radius:8px;padding:11px 18px;font-size:13.5px;
+  box-shadow:0 4px 20px rgba(0,0,0,.25);max-width:90vw}
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     CONFIG — preencha antes de publicar.
+     A chave publicável pode ficar aqui: ela é pública por natureza, e o
+     que protege os dados é o row level security do banco, não o segredo
+     da chave. A chave secreta NUNCA entra neste arquivo.
+     ================================================================ -->
+<script>
+const CONFIG = {
+  SUPABASE_URL:  'https://fvduinlletfotoolyzgr.supabase.co',
+  // A chave PUBLICÁVEL — sb_publishable_ZWkTc16YgsU0CfJAphPIeQ_wPHtA7Af (ou a anon antiga, que começa
+  // com eyJ). Nunca a sb_secret_: o Supabase recusa chave secreta vinda do
+  // navegador, e tudo responderia 401.
+  SUPABASE_ANON: 'COLE-AQUI-A-CHAVE-PUBLISHABLE'
+};
+</script>
+
+<div id="login" class="tela" hidden>
+  <div class="cartao">
+    <h1>Recepção Innvista</h1>
+    <p>Entre com a conta Google da Innvista para ver as reservas do dia.</p>
+    <div id="loginErro" class="erro" hidden></div>
+    <button class="botao principal" id="entrar">Entrar com Google</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <div class="top">
+    <div class="top-in">
+      <div class="brand"><h1>Recepção</h1><span class="sub">Innvista</span></div>
+      <div class="sync"><span class="dot" id="pulso"></span>
+        <span id="estadoSync">conectando…</span></div>
+      <div class="usuario"><span id="quem"></span><button id="sair">sair</button></div>
+    </div>
+    <div class="progress"><i id="bar"></i></div>
+  </div>
+
+  <div class="wrap">
+    <div class="kpis" id="kpis"></div>
+    <div class="panel">
+      <div class="tabbar" role="tablist" id="tabbar"></div>
+      <div id="banner"></div>
+      <div class="p-head">
+        <span class="hint" id="hint"></span>
+        <button class="toggle" id="onlyPend" aria-pressed="false">Só pendentes</button>
+        <input class="srch" id="q" type="search" placeholder="Apartamento ou hóspede">
+        <button class="clr" id="clr" hidden>Limpar filtros</button>
+      </div>
+      <div id="rows"><div class="carregando">Carregando…</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+/* ==================================================================
+   Painel da recepção — Innvista
+   ==================================================================
+   Um arquivo, sem etapa de compilação. Para mexer: edite, salve, suba.
+
+   O que ele faz de diferente da planilha:
+   - lê de views que já trazem a regra pronta (v_checkin resolve o
+     "esse apartamento está limpo?" num CASE, no banco);
+   - escreve apenas em tasks e cleanings, que são as tabelas do time;
+   - atualiza sozinho quando outra pessoa marca algo (Realtime).
+   ================================================================== */
+
+// Se o CDN não carregar (rede da recepção bloqueando, CDN fora do ar),
+// sem esta guarda a página fica branca e sem explicação — o pior tipo de
+// falha para quem está no balcão às 8h da manhã.
+if (typeof supabase === 'undefined') {
+  document.getElementById('login').hidden = false;
+  document.getElementById('entrar').hidden = true;
+  const e = document.getElementById('loginErro');
+  e.hidden = false;
+  e.innerHTML = '<b>Não consegui carregar a biblioteca do Supabase.</b><br><br>' +
+    'Normalmente é a internet ou a rede bloqueando o endereço ' +
+    '<code>cdn.jsdelivr.net</code>. Tente recarregar; se persistir, ' +
+    'confira a conexão ou libere esse endereço no firewall.';
+  throw new Error('supabase-js não carregou');
+}
+
+const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON);
+
+const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const HOJE = hojeISO();
+const AMANHA = (() => { const d = new Date(); d.setDate(d.getDate() + 1);
+  return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); })();
+
+let usuario = null;
+let D = { checkins: [], novas: [], eventos: [], bloqueios: [], limpezas: [], tarefas: {} };
+let view = 'novas', onlyPend = false, q = '', flt = null;
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const wa = t => 'https://wa.me/' + String(t || '').replace(/\D/g, '');
+const dm = d => d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) : '';
+function avisar(msg) {
+  const el = document.createElement('div');
+  el.className = 'aviso'; el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+/* ---------------- autenticação ---------------- */
+
+document.getElementById('entrar').addEventListener('click', async () => {
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google', options: { redirectTo: location.href.split('#')[0] }
+  });
+  if (error) mostrarErroLogin(error.message);
+});
+document.getElementById('sair').addEventListener('click', async () => {
+  await sb.auth.signOut(); location.reload();
+});
+function mostrarErroLogin(msg) {
+  const e = document.getElementById('loginErro');
+  e.textContent = msg; e.hidden = false;
+}
+
+(async function iniciar() {
+  if (CONFIG.SUPABASE_ANON.startsWith('sb_secret_')) {
+    document.getElementById('login').hidden = false;
+    mostrarErroLogin('Essa é a chave SECRETA. O painel precisa da publicável ' +
+      '(sb_publishable_…). O Supabase recusa chave secreta vinda do navegador.');
+    return;
+  }
+  if (CONFIG.SUPABASE_URL.includes('SEU-PROJETO') || CONFIG.SUPABASE_ANON.includes('COLE-AQUI')) {
+    document.getElementById('login').hidden = false;
+    mostrarErroLogin('Falta preencher o bloco CONFIG no topo deste arquivo com a URL do projeto e a chave anon.');
+    return;
+  }
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { document.getElementById('login').hidden = false; return; }
+
+  usuario = session.user;
+  document.getElementById('quem').textContent = usuario.email;
+  document.getElementById('app').hidden = false;
+  await carregar();
+  ligarTempoReal();
+  setInterval(carregar, 15 * 60 * 1000);   // rede de segurança, além do tempo real
+  contador();
+})();
+
+/* ---------------- leitura ---------------- */
+
+async function carregar() {
+  try {
+    document.getElementById('estadoSync').textContent = 'atualizando…';
+
+    const daqui = new Date(); daqui.setDate(daqui.getDate() + 10);
+    const ate = daqui.toLocaleDateString('sv-SE');
+
+    const [checkins, novas, eventos, bloqueios, limpezas, tarefas, runs] = await Promise.all([
+      sb.from('v_checkin').select('*').gte('check_in', HOJE).lte('check_in', ate).order('check_in'),
+      sb.from('v_novas_reservas').select('*'),
+      sb.from('v_eventos').select('*'),
+      sb.from('blocks').select('*, listings(nome)').gte('fim', HOJE).order('fim').limit(200),
+      sb.from('v_limpezas_hoje').select('*'),
+      sb.from('tasks').select('assunto_tipo,assunto_id,item,feito'),
+      sb.from('sync_runs').select('*').order('inicio', { ascending: false }).limit(1)
+    ]);
+
+    const erro = [checkins, novas, eventos, bloqueios, limpezas, tarefas, runs].find(r => r.error);
+    if (erro) throw erro.error;
+
+    D.checkins  = checkins.data || [];
+    D.novas     = novas.data || [];
+    D.eventos   = eventos.data || [];
+    D.bloqueios = (bloqueios.data || []).map(b => ({ ...b, apartamento: b.listings?.nome || '' }));
+    D.limpezas  = limpezas.data || [];
+
+    D.tarefas = {};
+    (tarefas.data || []).forEach(t => {
+      D.tarefas[t.assunto_tipo + '|' + t.assunto_id + '|' + t.item] = t.feito;
+    });
+
+    const r = (runs.data || [])[0];
+    const estado = document.getElementById('estadoSync');
+    const pulso = document.getElementById('pulso');
+    if (r && r.status === 'erro') {
+      estado.innerHTML = '<b style="color:var(--crit)">a sincronização falhou</b> — dados podem estar velhos';
+      pulso.style.background = 'var(--crit)';
+    } else if (r && r.inicio) {
+      const min = Math.round((Date.now() - new Date(r.inicio)) / 60000);
+      estado.textContent = 'sincronizado ' + (min < 1 ? 'agora' : 'há ' + min + ' min');
+      pulso.style.background = min > 45 ? 'var(--warn)' : 'var(--good)';
+    } else {
+      estado.textContent = 'sem execuções registradas';
+    }
+
+    renderKpis(); renderTabs(); renderBanner(); render();
+  } catch (e) {
+    document.getElementById('estadoSync').innerHTML =
+      '<b style="color:var(--crit)">erro ao carregar</b>';
+    document.getElementById('rows').innerHTML =
+      '<div class="empty">Não consegui carregar os dados.<br><br>' + esc(e.message || e) + '</div>';
+  }
+}
+
+function ligarTempoReal() {
+  // Quando alguém marca algo, some da tela das outras pessoas.
+  sb.channel('recepcao')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, carregar)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cleanings' }, carregar)
+    .subscribe();
+}
+
+/* ---------------- escrita ---------------- */
+
+async function marcar(botao, tipo, id, item, feito) {
+  botao.classList.add('salvando');
+  const chave = tipo + '|' + id + '|' + item;
+  const antes = D.tarefas[chave];
+  D.tarefas[chave] = feito;                       // otimista: a tela responde na hora
+
+  const { error } = await sb.from('tasks').upsert({
+    assunto_tipo: tipo, assunto_id: id, item: item,
+    feito: feito, por: usuario.email, em: new Date().toISOString()
+  }, { onConflict: 'assunto_tipo,assunto_id,item' });
+
+  botao.classList.remove('salvando');
+  if (error) {
+    D.tarefas[chave] = antes;                     // desfaz
+    botao.classList.add('falhou');
+    avisar('Não consegui salvar: ' + error.message);
+    setTimeout(() => botao.classList.remove('falhou'), 4000);
+  }
+  render(); renderKpis();
+}
+
+async function anotarOcorrencia(id, texto) {
+  const { error } = await sb.from('cleanings')
+    .update({ ocorrencia: texto || null, por: usuario.email }).eq('id', id);
+  if (error) avisar('Não consegui salvar a ocorrência: ' + error.message);
+}
+
+async function mudarStatusLimpeza(id, status) {
+  const { error } = await sb.from('cleanings')
+    .update({ status: status, por: usuario.email, em: new Date().toISOString() }).eq('id', id);
+  if (error) avisar('Não consegui salvar: ' + error.message);
+}
+
+/* ---------------- checklists por tipo de evento ---------------- */
+
+const feito = (tipo, id, item) => !!D.tarefas[tipo + '|' + id + '|' + item];
+
+function stReserva(r) {
+  const S = [];
+  S.push({ f: 'documento', label: 'Documento', s: feito('reserva', r.id, 'documento') ? 'done' : 'pend' });
+
+  let limp;
+  if (feito('reserva', r.id, 'limpeza')) limp = { s: 'done', label: 'Limpeza' };
+  else if (r.limpeza_estado === 'saida_no_dia')   limp = { s: 'pend', label: 'Sujo · saída hoje' };
+  else if (r.limpeza_estado === 'liberada')       limp = { s: 'done', label: 'Liberada ' + dm(r.ultima_saida) };
+  else if (r.limpeza_estado === 'sem_historico')  limp = { s: 'pend', label: 'Sem histórico' };
+  else limp = { s: 'pend', label: 'Sujo · saída ' + dm(r.ultima_saida) + ' sem verificação' };
+  S.push({ f: 'limpeza', ...limp });
+
+  S.push({ f: 'senhas', label: 'Senhas', s: feito('reserva', r.id, 'senhas') ? 'done' : 'pend' });
+  S.push({ f: 'garagem', label: r.tem_vaga ? 'Dados do carro' : 'Sem garagem',
+           s: r.tem_vaga ? (feito('reserva', r.id, 'garagem') ? 'done' : 'pend') : 'na' });
+  S.push({ f: 'facial', label: r.tem_facial ? 'Facial' : 'Sem facial',
+           s: r.tem_facial ? (feito('reserva', r.id, 'facial') ? 'done' : 'pend') : 'na' });
+  return { tipo: 'reserva', id: r.id, items: S };
+}
+
+function stEvento(e) {
+  const alt = e.status === 'alterada';
+  const t = alt ? 'alteracao' : 'cancelamento';
+  const S = [];
+  if (alt) {
+    S.push({ f: 'senhas', label: 'Credenciais atualizadas', s: feito(t, e.id, 'senhas') ? 'done' : 'pend' });
+    S.push({ f: 'facial', label: e.tem_facial ? 'Facial reenviada' : 'Sem facial',
+             s: e.tem_facial ? (feito(t, e.id, 'facial') ? 'done' : 'pend') : 'na' });
+    S.push({ f: 'limpeza', label: 'Limpeza reagendada', s: feito(t, e.id, 'limpeza') ? 'done' : 'pend' });
+    S.push({ f: 'aviso', label: 'Novas datas confirmadas', s: feito(t, e.id, 'aviso') ? 'done' : 'pend' });
+  } else {
+    S.push({ f: 'limpeza', label: 'Limpeza cancelada', s: feito(t, e.id, 'limpeza') ? 'done' : 'pend' });
+    S.push({ f: 'senhas', label: 'Credenciais revogadas', s: feito(t, e.id, 'senhas') ? 'done' : 'pend' });
+    S.push({ f: 'cal', label: 'Calendário conferido', s: feito(t, e.id, 'cal') ? 'done' : 'pend' });
+  }
+  return { tipo: t, id: e.id, items: S };
+}
+
+function stBloqueio(b) {
+  const S = [
+    { f: 'limpeza', label: 'Limpeza agendada para a saída', s: feito('bloqueio', b.id, 'limpeza') ? 'done' : 'pend' },
+    { f: 'estado', label: 'Estado do apartamento conferido', s: feito('bloqueio', b.id, 'estado') ? 'done' : 'pend' }
+  ];
+  if (b.tipo === 'manutencao')
+    S.push({ f: 'servico', label: 'Serviço registrado', s: feito('bloqueio', b.id, 'servico') ? 'done' : 'pend' });
+  return { tipo: 'bloqueio', id: b.id, items: S };
+}
+
+function stLimpeza(l) {
+  const conf = l.status && l.status !== 'pendente';
+  return { tipo: 'limpeza', id: String(l.id), limpezaId: l.id, status: l.status, items: [
+    { f: '__status', label: conf ? 'Limpeza confirmada' : 'Confirmar limpeza', s: conf ? 'done' : 'pend' },
+    { f: 'vistoria', label: 'Apartamento vistoriado', s: feito('limpeza', String(l.id), 'vistoria') ? 'done' : 'pend' }
+  ] };
+}
+
+const pendOf = st => st.items.filter(x => x.s === 'pend').length;
+
+/* ---------------- listas e render ---------------- */
+
+const TABS = [
+  { id: 'novas',   label: 'Novas · 24h',      n: () => D.novas.length },
+  { id: 'hoje',    label: 'Check-ins hoje',   n: () => D.checkins.filter(c => c.check_in === HOJE).length },
+  { id: 'prox',    label: 'Próximos 10 dias', n: () => D.checkins.length },
+  { id: 'eventos', label: 'Alterações e cancelamentos', n: () => D.eventos.length },
+  { id: 'bloq',    label: 'Bloqueios e manutenções',    n: () => D.bloqueios.length },
+  { id: 'limp',    label: 'Limpezas de hoje', n: () => D.limpezas.length }
+];
+const HINTS = {
+  novas:'Reservas que entraram nas últimas 24 horas e ainda não passaram pelo time.',
+  hoje:'Quem chega hoje. O apartamento parte sempre de sujo: só fica verde com saída anterior já liberada.',
+  prox:'Todos os check-ins dos próximos 10 dias.',
+  eventos:'Alteração exige trocar as credenciais e reenviar a facial; cancelamento exige desfazer o que já foi feito.',
+  bloq:'Bloqueio de proprietário e manutenção também ocupam o apartamento — e geram limpeza na saída.',
+  limp:'Confirme com a empresa e registre qualquer manutenção ou problema reportado.'
+};
+
+function baseList() {
+  if (view === 'novas')   return D.novas.map(d => ({ t: 'R', d }));
+  if (view === 'hoje')    return D.checkins.filter(c => c.check_in === HOJE).map(d => ({ t: 'R', d }));
+  if (view === 'prox')    return D.checkins.map(d => ({ t: 'R', d }));
+  if (view === 'eventos') return D.eventos.map(d => ({ t: 'E', d }));
+  if (view === 'bloq')    return D.bloqueios.map(d => ({ t: 'B', d }));
+  if (view === 'limp')    return D.limpezas.map(d => ({ t: 'L', d }));
+  return [];
+}
+const stOf = x => x.t === 'R' ? stReserva(x.d) : x.t === 'E' ? stEvento(x.d)
+                : x.t === 'B' ? stBloqueio(x.d) : stLimpeza(x.d);
+
+function filtered() {
+  let L = baseList();
+  if (flt === 'semTel')   L = L.filter(x => x.t === 'R' && !x.d.hospede_fone);
+  if (flt === 'origem')   L = L.filter(x => x.t === 'L' && x.d.origem !== 'check-out');
+  if (flt === 'semLimp')  L = L.filter(x => x.t === 'R' && stReserva(x.d).items.find(i => i.f === 'limpeza').s !== 'done');
+  if (onlyPend) L = L.filter(x => pendOf(stOf(x)) > 0);
+  if (q) { const t = q.toLowerCase();
+    L = L.filter(x => ((x.d.apartamento || '') + ' ' + (x.d.hospede_nome || '') + ' ' + (x.d.empresa || '')).toLowerCase().includes(t)); }
+  return L;
+}
+
+function chipsHTML(st) {
+  return st.items.map(i => `<button class="chip" data-s="${i.s}" data-tipo="${esc(st.tipo)}"
+    data-id="${esc(st.id)}" data-f="${i.f}" ${i.s === 'na' ? 'disabled' : ''}>
+    <span class="mk">${i.s === 'done' ? '✓' : ''}</span>${esc(i.label)}</button>`).join('');
+}
+function whenL(ci) {
+  if (ci === HOJE)   return { c: 'hoje',   t: 'HOJE',   s: 'check-in' };
+  if (ci === AMANHA) return { c: 'amanha', t: 'AMANHÃ', s: dm(ci) };
+  return { c: '', t: dm(ci), s: 'check-in' };
+}
+
+function rowReserva(r, st) {
+  const p = pendOf(st), w = whenL(r.check_in);
+  const sev = r.check_in === HOJE && p ? 'sev-crit' : (r.check_in === AMANHA && p ? 'sev-warn' : (p ? '' : 'sev-ok'));
+  const canal = r.canal ? `<span class="tag ${esc(r.canal)}">${r.canal === 'bcom' ? 'Booking' : esc(r.canal)}</span>` : '';
+  const tel = r.hospede_fone
+    ? `<span>📱 <a href="${wa(r.hospede_fone)}" target="_blank" rel="noopener">${esc(r.hospede_fone)}</a></span>`
+    : `<span class="miss">sem telefone</span>`;
+  return `<div class="row ${sev}"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(r.apartamento)}</span>
+      <span class="resid">${esc(String(r.codigo_canal || '').slice(0, 12))}</span>${canal}</div>
+      <div class="guest">${esc(r.hospede_nome || '— hóspede ainda não identificado —')}</div>
+      <div class="r-meta"><span>${dm(r.check_in)} → ${dm(r.check_out)}</span>
+        <span>${esc(r.hospedes || '?')} hósp.</span>${tel}
+        ${r.ultima_saida ? `<span>última saída ${dm(r.ultima_saida)} · ${esc(r.ultima_saida_origem)}</span>` : ''}</div></div>
+    <div class="when ${w.c}"><b>${w.t}</b>${w.s}</div>
+    <div class="chips">${chipsHTML(st)}</div></div></div>`;
+}
+
+function rowEvento(e, st) {
+  const alt = e.status === 'alterada';
+  return `<div class="row ${alt ? 'sev-warn' : 'sev-crit'}"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(e.apartamento)}</span>
+      <span class="tag ${alt ? 'alt' : 'canc'}">${alt ? 'Alterada' : 'Cancelada'}</span></div>
+      <div class="guest">${alt ? 'O canal cancelou e recriou a reserva. Documento conferido foi herdado; senha e facial precisam ser refeitas.'
+                              : 'Reserva desfeita. Verifique o que já tinha sido preparado.'}</div>
+      <div class="r-meta"><span>${dm(e.check_in)} → ${dm(e.check_out)}</span>
+        ${e.codigo_canal ? `<span>${esc(e.codigo_canal)}</span>` : ''}</div></div>
+    <div class="when"><b>${dm(String(e.cancelada_em || '').slice(0, 10))}</b>${String(e.cancelada_em || '').slice(11, 16)}</div>
+    <div class="chips">${chipsHTML(st)}</div></div></div>`;
+}
+
+function rowBloqueio(b, st) {
+  const man = b.tipo === 'manutencao';
+  const dias = Math.round((new Date(b.fim) - new Date(HOJE)) / 86400000);
+  const dl = dias === 0 ? 'HOJE' : dias === 1 ? 'AMANHÃ' : dias < 0 ? `há ${-dias}d` : `${dias}d`;
+  return `<div class="row ${dias >= 0 && dias <= 2 ? 'sev-warn' : 'sev-viol'}"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(b.apartamento)}</span>
+      <span class="tag ${man ? 'manut' : 'bloq'}">${man ? 'Manutenção' : 'Bloqueio'}</span></div>
+      <div class="guest">${man ? 'Serviço técnico no apartamento — precisa de limpeza depois.'
+                               : 'Uso do proprietário ou bloqueio operacional — precisa de limpeza na saída.'}</div>
+      <div class="r-meta"><span>${dm(b.inicio)} → ${dm(b.fim)}</span></div></div>
+    <div class="when ${dias === 0 ? 'hoje' : dias === 1 ? 'amanha' : ''}"><b>${dl}</b>saída</div>
+    <div class="chips">${chipsHTML(st)}</div></div></div>`;
+}
+
+function rowLimpeza(l, st) {
+  const res = l.origem === 'check-out';
+  const tag = res ? '<span class="tag res">Check-out</span>'
+    : l.origem === 'manutencao' ? '<span class="tag manut">Manutenção</span>'
+    : '<span class="tag bloq">Bloqueio</span>';
+  const n = l.ocorrencia || '';
+  return `<div class="row ${n ? 'sev-warn' : (pendOf(st) ? '' : 'sev-ok')}"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(l.apartamento)}</span>${tag}
+      <span class="resid">${esc(l.empresa || 'SEM EMPRESA')}</span></div>
+      <div class="guest">${res ? 'Check-out de hóspede' : l.origem === 'manutencao'
+        ? 'Manutenção — verificação diferente da de hóspede' : 'Bloqueio do proprietário — verificação diferente'}</div></div>
+    <div class="when"><b>${esc(l.status)}</b>${dm(l.dia)}</div>
+    <div class="chips">${chipsHTML(st)}</div>
+    <div class="occ"><textarea class="${n ? 'has' : ''}" data-limpeza="${l.id}" rows="1"
+      placeholder="Manutenção ou problema reportado pela empresa de limpeza…">${esc(n)}</textarea></div>
+  </div></div>`;
+}
+
+function render() {
+  document.getElementById('hint').textContent = HINTS[view];
+  document.getElementById('clr').hidden = !(flt || onlyPend || q);
+  const L = filtered(), el = document.getElementById('rows');
+  if (!L.length) { el.innerHTML = '<div class="empty">Nada aqui com os filtros atuais.</div>'; return; }
+  el.innerHTML = L.map(x => { const st = stOf(x);
+    return x.t === 'R' ? rowReserva(x.d, st) : x.t === 'E' ? rowEvento(x.d, st)
+         : x.t === 'B' ? rowBloqueio(x.d, st) : rowLimpeza(x.d, st); }).join('');
+}
+function renderTabs() {
+  document.getElementById('tabbar').innerHTML = TABS.map(t =>
+    `<button role="tab" data-v="${t.id}" aria-selected="${t.id === view}">${t.label}<span class="n">${t.n()}</span></button>`).join('');
+}
+function renderBanner() { document.getElementById('banner').innerHTML = ''; }
+
+function renderKpis() {
+  const hoje = D.checkins.filter(c => c.check_in === HOJE);
+  const pend = hoje.reduce((a, r) => a + pendOf(stReserva(r)), 0);
+  const semTel = D.checkins.filter(c => !c.hospede_fone).length;
+  const alt = D.eventos.filter(e => e.status === 'alterada').length;
+  const bloqLimp = D.limpezas.filter(l => l.origem !== 'check-out').length;
+  const semLimp = hoje.filter(r => stReserva(r).items.find(i => i.f === 'limpeza').s !== 'done').length;
+  const K = [
+    { v: D.novas.length, k: 'novas reservas nas últimas 24h', c: 'is-acc', go: ['novas', null] },
+    { v: hoje.length, k: 'check-ins hoje', go: ['hoje', null] },
+    { v: pend, k: 'pendências nos check-ins de hoje', c: pend ? 'is-crit' : '', go: ['hoje', null], pend: true },
+    { v: D.eventos.length, k: 'alterações e cancelamentos em 7 dias', x: alt + ' exigem trocar credenciais', c: 'is-warn', go: ['eventos', null] },
+    { v: D.limpezas.length, k: 'limpezas de hoje', x: bloqLimp + ' vindas de bloqueio', go: ['limp', null] },
+    { v: bloqLimp, k: 'limpezas que não vieram de check-out', c: 'is-viol', go: ['limp', 'origem'] },
+    { v: semTel, k: 'reservas sem telefone do hóspede', c: semTel ? 'is-warn' : '', go: ['prox', 'semTel'] },
+    { v: semLimp, k: 'check-ins de hoje com limpeza não confirmada', c: semLimp ? 'is-crit' : '', go: ['hoje', 'semLimp'] }
+  ];
+  document.getElementById('kpis').innerHTML = K.map((x, i) =>
+    `<button class="kpi ${x.c || ''}" data-i="${i}" aria-pressed="false">
+      <div class="v">${x.v}</div><div class="k">${x.k}</div>${x.x ? `<div class="x">${x.x}</div>` : ''}</button>`).join('');
+  window.__K = K;
+}
+
+function goto(v, f, p) {
+  view = v; flt = f || null; onlyPend = !!p; q = '';
+  document.getElementById('q').value = '';
+  document.getElementById('onlyPend').setAttribute('aria-pressed', String(onlyPend));
+  renderTabs(); renderBanner(); render();
+  document.querySelectorAll('.kpi').forEach(b => b.setAttribute('aria-pressed', 'false'));
+}
+
+/* ---------------- eventos ---------------- */
+
+document.getElementById('kpis').addEventListener('click', e => {
+  const b = e.target.closest('.kpi'); if (!b) return;
+  const x = window.__K[+b.dataset.i];
+  goto(x.go[0], x.go[1], x.pend); b.setAttribute('aria-pressed', 'true');
+});
+document.getElementById('tabbar').addEventListener('click', e => {
+  const b = e.target.closest('[role=tab]'); if (!b) return; goto(b.dataset.v, null, false);
+});
+document.getElementById('rows').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b || b.disabled) return;
+  const novo = b.dataset.s !== 'done';
+  if (b.dataset.f === '__status') {
+    mudarStatusLimpeza(Number(b.dataset.id), novo ? 'feita' : 'pendente').then(carregar);
+    return;
+  }
+  marcar(b, b.dataset.tipo, b.dataset.id, b.dataset.f, novo);
+});
+let debounce;
+document.getElementById('rows').addEventListener('input', e => {
+  const t = e.target;
+  if (t.tagName !== 'TEXTAREA') return;
+  t.classList.toggle('has', !!t.value.trim());
+  clearTimeout(debounce);
+  debounce = setTimeout(() => anotarOcorrencia(Number(t.dataset.limpeza), t.value.trim()), 700);
+});
+const op = document.getElementById('onlyPend');
+op.addEventListener('click', () => { onlyPend = !onlyPend; op.setAttribute('aria-pressed', String(onlyPend)); render(); });
+document.getElementById('q').addEventListener('input', e => { q = e.target.value; render(); });
+document.getElementById('clr').addEventListener('click', () => goto(view, null, false));
+
+function contador() {
+  let left = 900;
+  setInterval(() => { left--; if (left < 0) left = 900;
+    document.getElementById('bar').style.width = ((900 - left) / 900 * 100) + '%'; }, 1000);
+}
+</script>
+</body>
+</html>
