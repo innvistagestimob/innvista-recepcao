@@ -130,6 +130,58 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tag.bloq{background:var(--viol-soft);color:var(--viol)}
 .tag.manut{background:var(--warn-soft);color:var(--warn)}
 .tag.res{background:var(--surface-3);color:var(--muted)}
+.tag.extra{background:var(--accent-soft);color:var(--accent-ink)}
+.tag.entrada{background:var(--good-soft);color:var(--good)}
+.tag.saida{background:var(--warn-soft);color:var(--warn)}
+.tag.perm{background:var(--viol-soft);color:var(--viol)}
+.tag.semlimp{background:var(--surface-3);color:var(--muted)}
+.tag.verif{background:var(--warn-soft);color:var(--warn)}
+.tag.facial{background:var(--accent-soft);color:var(--accent-ink)}
+
+/* agenda das empresas */
+.ag-card{border:1px solid var(--line);border-radius:8px;background:var(--surface);
+  margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow)}
+.ag-top{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.ag-top b{font-size:15px}
+.ag-n{display:block;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);margin-top:2px}
+.ag-copiar{flex:none;border:1px solid var(--accent);background:var(--accent);color:#fff;
+  border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}
+.ag-copiar:hover{filter:brightness(1.08)}
+.ag-dia{padding:10px 16px 12px}
+.ag-dia+.ag-dia{border-top:1px dashed var(--line)}
+.ag-dia-t{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:6px;display:flex;gap:8px;align-items:center}
+.ag-dia-t span{background:var(--surface-3);border-radius:10px;padding:1px 7px;font-size:10.5px}
+.ag-item{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:14px;color:var(--ink-2)}
+.ag-item em{font-style:normal;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.06em;text-transform:uppercase;background:var(--good-soft);color:var(--good);
+  padding:1px 6px;border-radius:3px}
+.ag-item em.w{background:var(--warn-soft);color:var(--warn)}
+.ag-aviso{margin:10px 16px 0;padding:8px 11px;border-radius:6px;font-size:13px;
+  background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn-line)}
+
+/* diálogos */
+dialog{border:none;border-radius:10px;padding:0;background:transparent;max-width:min(94vw,470px)}
+dialog::backdrop{background:rgba(19,28,37,.5)}
+.dlg{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:20px;display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow)}
+.dlg h3{font-size:17px;margin:0}
+.dlg-sub{margin:0;font-size:13px;color:var(--muted)}
+.dlg label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.dlg label small{font-weight:400;color:var(--muted);font-size:11.5px}
+.dlg input,.dlg select,.dlg textarea{font:inherit;font-weight:400;padding:8px 10px;
+  border:1px solid var(--line-2);border-radius:6px;background:var(--ground);color:var(--ink);width:100%}
+.dlg textarea{resize:vertical}
+.dlg-aviso{padding:9px 11px;border-radius:6px;font-size:13px;line-height:1.45;
+  background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn-line)}
+.dlg-erro{margin:0;font-size:13px;color:var(--crit);min-height:1em}
+.dlg-acoes{display:flex;gap:8px;justify-content:flex-end}
+.btn-pri{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;
+  padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer}
+.btn-sec{border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);
+  border-radius:6px;padding:9px 16px;font-size:14px;cursor:pointer}
+.chip.acao{border-color:var(--accent);color:var(--accent-ink)}
 .guest{font-size:14px;color:var(--ink-2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .r-meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;
   font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted)}
@@ -290,6 +342,50 @@ const CONFIG = {
   </div>
 </div>
 
+<dialog id="dlgExtra">
+  <form method="dialog" class="dlg">
+    <h3>Limpeza adicional</h3>
+    <p class="dlg-sub"><b id="exApto"></b> · empresa: <span id="exEmp"></span></p>
+
+    <label>Data da limpeza
+      <input type="date" id="exData">
+      <small>Não pode passar do check-out do hóspede.</small></label>
+
+    <div id="exAviso" class="dlg-aviso" hidden>
+      Limpeza para <b>hoje</b>: a empresa já montou a rota da manhã.
+      Confirme a disponibilidade por telefone antes de prometer ao hóspede.
+    </div>
+
+    <label>Motivo
+      <select id="exTipo">
+        <option value="contratada">Contratada pelo hóspede</option>
+        <option value="repasse">Repasse por problema de limpeza</option>
+      </select></label>
+
+    <label>Valor cobrado
+      <input type="text" id="exValor" inputmode="decimal" placeholder="180,00">
+      <small>Deixe em branco quando for repasse.</small></label>
+
+    <label>Observação
+      <textarea id="exNota" rows="2" placeholder="O que foi combinado com o hóspede…"></textarea></label>
+
+    <p class="dlg-erro" id="exErro"></p>
+    <div class="dlg-acoes">
+      <button type="button" class="btn-sec" id="exCancelar">Cancelar</button>
+      <button type="button" class="btn-pri" id="exSalvar">Lançar limpeza</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgTexto">
+  <form method="dialog" class="dlg">
+    <h3>Copie a mensagem</h3>
+    <p class="dlg-sub">O navegador não deixou copiar sozinho. Selecione e copie.</p>
+    <textarea id="exFallback" rows="16"></textarea>
+    <div class="dlg-acoes"><button type="button" class="btn-pri" id="txFechar">Fechar</button></div>
+  </form>
+</dialog>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 /* ==================================================================
@@ -351,13 +447,22 @@ const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
   }
 });
 
+// Mesmo carimbo do sync_stays.py, pelo mesmo motivo: responder sem
+// adivinhação a "é o painel novo que está no ar?". Aparece no diário de
+// bordo da tela de login e no console. Suba a versão sempre que mexer.
+const VERSAO_PAINEL = 'v2.0 (in house, agenda das empresas, limpeza extra)';
+console.log('[painel] ' + VERSAO_PAINEL);
+
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 const HOJE = hojeISO();
 const AMANHA = (() => { const d = new Date(); d.setDate(d.getDate() + 1);
   return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); })();
 
 let usuario = null;
-let D = { checkins: [], novas: [], eventos: [], bloqueios: [], limpezas: [], tarefas: {} };
+let D = { checkins: [], novas: [], inhouse: [], canc: [], alt: [],
+           bloqueios: [], limpezas: [], tarefas: {} };
+const DEPOIS = (() => { const d = new Date(); d.setDate(d.getDate() + 2);
+  return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); })();
 let view = 'novas', onlyPend = false, q = '', flt = null;
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
@@ -567,22 +672,26 @@ async function carregar() {
     const daqui = new Date(); daqui.setDate(daqui.getDate() + 10);
     const ate = daqui.toLocaleDateString('sv-SE');
 
-    const [checkins, novas, eventos, bloqueios, limpezas, tarefas, runs] = await Promise.all([
+    const [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, runs] = await Promise.all([
       sb.from('v_checkin').select('*').gte('check_in', HOJE).lte('check_in', ate).order('check_in'),
       sb.from('v_novas_reservas').select('*'),
-      sb.from('v_eventos').select('*'),
+      sb.from('v_in_house').select('*'),
+      sb.from('v_cancelamentos').select('*'),
+      sb.from('v_alteracoes').select('*'),
       sb.from('blocks').select('*, listings(nome)').gte('fim', HOJE).order('fim').limit(200),
-      sb.from('v_limpezas_hoje').select('*'),
+      sb.from('v_limpezas').select('*'),
       sb.from('tasks').select('assunto_tipo,assunto_id,item,feito'),
       sb.from('sync_runs').select('*').order('inicio', { ascending: false }).limit(1)
     ]);
 
-    const erro = [checkins, novas, eventos, bloqueios, limpezas, tarefas, runs].find(r => r.error);
+    const erro = [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, runs].find(r => r.error);
     if (erro) throw erro.error;
 
     D.checkins  = checkins.data || [];
     D.novas     = novas.data || [];
-    D.eventos   = eventos.data || [];
+    D.inhouse   = inhouse.data || [];
+    D.canc      = canc.data || [];
+    D.alt       = alt.data || [];
     D.bloqueios = (bloqueios.data || []).map(b => ({ ...b, apartamento: b.listings?.nome || '' }));
     D.limpezas  = limpezas.data || [];
 
@@ -699,6 +808,20 @@ function stEvento(e) {
   return { tipo: t, id: e.id, items: S };
 }
 
+function stAlteracao(e) {
+  // O que uma alteração exige quando o hóspede JÁ está dentro. É diferente
+  // de um cancelamento: aqui não se desfaz, se refaz.
+  const S = [
+    { f: 'credenciais', label: 'Credenciais trocadas', s: feito('alteracao', e.id, 'credenciais') ? 'done' : 'pend' },
+    { f: 'calendario',  label: 'Calendário conferido', s: feito('alteracao', e.id, 'calendario') ? 'done' : 'pend' },
+    { f: 'limpeza',     label: 'Limpeza reprogramada', s: feito('alteracao', e.id, 'limpeza') ? 'done' : 'pend' }
+  ];
+  S.splice(1, 0, e.tem_facial
+    ? { f: 'facial', label: 'Facial reenviada', s: feito('alteracao', e.id, 'facial') ? 'done' : 'pend' }
+    : { f: 'facial', label: 'Sem facial', s: 'na' });
+  return { tipo: 'alteracao', id: e.id, items: S };
+}
+
 function stBloqueio(b) {
   const S = [
     { f: 'limpeza', label: 'Limpeza agendada para a saída', s: feito('bloqueio', b.id, 'limpeza') ? 'done' : 'pend' },
@@ -721,33 +844,47 @@ const pendOf = st => st.items.filter(x => x.s === 'pend').length;
 
 /* ---------------- listas e render ---------------- */
 
+// prox exclui os check-ins de hoje de propósito: eles já têm aba própria,
+// e repetir a mesma reserva em duas listas fazia o time conferir duas vezes.
+const proximos = () => D.checkins.filter(c => c.check_in > HOJE);
+const limpDe = d => D.limpezas.filter(l => l.dia === d);
+
 const TABS = [
   { id: 'novas',   label: 'Novas · 24h',      n: () => D.novas.length },
   { id: 'hoje',    label: 'Check-ins hoje',   n: () => D.checkins.filter(c => c.check_in === HOJE).length },
-  { id: 'prox',    label: 'Próximos 10 dias', n: () => D.checkins.length },
-  { id: 'eventos', label: 'Alterações e cancelamentos', n: () => D.eventos.length },
-  { id: 'bloq',    label: 'Bloqueios e manutenções',    n: () => D.bloqueios.length },
-  { id: 'limp',    label: 'Limpezas de hoje', n: () => D.limpezas.length }
+  { id: 'inhouse', label: 'In house',         n: () => D.inhouse.length },
+  { id: 'prox',    label: 'Próximos 10 dias', n: () => proximos().length },
+  { id: 'alt',     label: 'Alterações',       n: () => D.alt.length },
+  { id: 'canc',    label: 'Cancelamentos',    n: () => D.canc.length },
+  { id: 'bloq',    label: 'Bloqueios e manutenções', n: () => D.bloqueios.length },
+  { id: 'limp',    label: 'Limpezas de hoje', n: () => limpDe(HOJE).length },
+  { id: 'agenda',  label: 'Agenda das empresas', n: () => limpDe(AMANHA).length + limpDe(DEPOIS).length }
 ];
 const HINTS = {
   novas:'Reservas que entraram nas últimas 24 horas e ainda não passaram pelo time.',
   hoje:'Quem chega hoje. O apartamento parte sempre de sujo: só fica verde com saída anterior já liberada.',
-  prox:'Todos os check-ins dos próximos 10 dias.',
-  eventos:'Alteração exige trocar as credenciais e reenviar a facial; cancelamento exige desfazer o que já foi feito.',
+  inhouse:'Quem está hospedado agora, para conferência. É aqui que se lança uma limpeza adicional.',
+  prox:'Check-ins de amanhã em diante. Os de hoje ficam na aba própria.',
+  alt:'Alterações em reservas de hóspedes que já estão no apartamento — trocar credenciais e reenviar a facial.',
+  canc:'Cancelamentos que exigem ação hoje: a reserva era de hoje, ou o hóspede já estava hospedado.',
   bloq:'Bloqueio de proprietário e manutenção também ocupam o apartamento — e geram limpeza na saída.',
-  limp:'Confirme com a empresa e registre qualquer manutenção ou problema reportado.'
+  limp:'Confirme com a empresa e registre qualquer manutenção ou problema reportado.',
+  agenda:'O planejamento para mandar às empresas. Copie e cole no WhatsApp de cada uma.'
 };
 
 function baseList() {
   if (view === 'novas')   return D.novas.map(d => ({ t: 'R', d }));
   if (view === 'hoje')    return D.checkins.filter(c => c.check_in === HOJE).map(d => ({ t: 'R', d }));
-  if (view === 'prox')    return D.checkins.map(d => ({ t: 'R', d }));
-  if (view === 'eventos') return D.eventos.map(d => ({ t: 'E', d }));
+  if (view === 'inhouse') return D.inhouse.map(d => ({ t: 'H', d }));
+  if (view === 'prox')    return proximos().map(d => ({ t: 'R', d }));
+  if (view === 'alt')     return D.alt.map(d => ({ t: 'A', d }));
+  if (view === 'canc')    return D.canc.map(d => ({ t: 'E', d }));
   if (view === 'bloq')    return D.bloqueios.map(d => ({ t: 'B', d }));
-  if (view === 'limp')    return D.limpezas.map(d => ({ t: 'L', d }));
+  if (view === 'limp')    return limpDe(HOJE).map(d => ({ t: 'L', d }));
   return [];
 }
-const stOf = x => x.t === 'R' ? stReserva(x.d) : x.t === 'E' ? stEvento(x.d)
+const stOf = x => x.t === 'R' || x.t === 'H' ? stReserva(x.d)
+                : x.t === 'E' ? stEvento(x.d) : x.t === 'A' ? stAlteracao(x.d)
                 : x.t === 'B' ? stBloqueio(x.d) : stLimpeza(x.d);
 
 function filtered() {
@@ -790,14 +927,59 @@ function rowReserva(r, st) {
     <div class="chips">${chipsHTML(st)}</div></div></div>`;
 }
 
-function rowEvento(e, st) {
-  const alt = e.status === 'alterada';
-  return `<div class="row ${alt ? 'sev-warn' : 'sev-crit'}"><div class="sev"></div><div class="r-in">
+function rowInHouse(r, st) {
+  const p = pendOf(st);
+  const marca = r.entra_hoje ? '<span class="tag entrada">Entra hoje</span>'
+              : r.sai_hoje  ? '<span class="tag saida">Sai hoje</span>' : '';
+  const perm = r.permanece ? '<span class="tag perm">Permanece</span>' : '';
+  const semL = r.sem_limpeza ? '<span class="tag semlimp">Sem limpeza</span>' : '';
+  const tel = r.hospede_fone
+    ? `<span>📱 <a href="${wa(r.hospede_fone)}" target="_blank" rel="noopener">${esc(r.hospede_fone)}</a></span>`
+    : `<span class="miss">sem telefone</span>`;
+  const nt = (r.nota_interna || '').trim();
+  const noites = r.noites_restantes;
+  return `<div class="row ${r.sai_hoje ? 'sev-warn' : 'sev-ok'}"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(r.apartamento)}</span>
+      <span class="resid">${esc(String(r.id || '').slice(0, 12))}</span>${marca}${perm}${semL}</div>
+      <div class="guest">${esc(r.hospede_nome || '— hóspede ainda não identificado —')}</div>
+      <div class="r-meta"><span>${dm(r.check_in)} → ${dm(r.check_out)}</span>
+        <span>${esc(r.hospedes || '?')} hósp.</span>${tel}
+        ${nt ? `<span title="observação da Stays">📝 ${esc(nt.slice(0, 60))}</span>` : ''}</div></div>
+    <div class="when ${r.sai_hoje ? 'hoje' : ''}">
+      <b>${noites === 0 ? 'SAI HOJE' : noites + (noites === 1 ? ' noite' : ' noites')}</b>
+      ${noites === 0 ? 'check-out' : 'restantes'}</div>
+    <div class="chips"><button class="chip acao" data-extra="${esc(r.id)}"
+      data-apto="${esc(r.apartamento)}" data-lid="${esc(r.listing_id)}"
+      data-emp="${esc(r.empresa_limpeza || '')}" data-ate="${esc(r.check_out)}">
+      <span class="mk">+</span>Limpeza adicional</button></div>
+  </div></div>`;
+}
+
+function rowAlteracao(e, st) {
+  const q = String(e.alterada_em || '');
+  return `<div class="row sev-warn"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(e.apartamento)}</span>
-      <span class="tag ${alt ? 'alt' : 'canc'}">${alt ? 'Alterada' : 'Cancelada'}</span></div>
-      <div class="guest">${alt ? 'O canal cancelou e recriou a reserva. Documento conferido foi herdado; senha e facial precisam ser refeitas.'
-                              : 'Reserva desfeita. Verifique o que já tinha sido preparado.'}</div>
+      <span class="tag alt">Alterada</span>
+      ${e.tem_facial ? '<span class="tag facial">Tem facial</span>' : ''}</div>
+      <div class="guest">${esc(e.alteracao_detalhe || 'A reserva mudou.')}</div>
       <div class="r-meta"><span>${dm(e.check_in)} → ${dm(e.check_out)}</span>
+        <span>${esc(e.hospede_nome || '')}</span>
+        <span>hóspede no apartamento agora</span></div></div>
+    <div class="when"><b>${dm(q.slice(0, 10))}</b>${q.slice(11, 16)}</div>
+    <div class="chips">${chipsHTML(st)}</div></div></div>`;
+}
+
+function rowEvento(e, st) {
+  const dentro = e.estava_hospedado;
+  return `<div class="row sev-crit"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(e.apartamento)}</span>
+      <span class="tag canc">Cancelada</span>
+      ${dentro ? '<span class="tag perm">Estava hospedado</span>' : '<span class="tag entrada">Chegava hoje</span>'}</div>
+      <div class="guest">${dentro
+        ? 'O hóspede já estava no apartamento. Recolha as credenciais, avise a portaria e libere a limpeza.'
+        : 'Chegava hoje. Desfaça o que já tinha sido preparado — credenciais, facial e vaga.'}</div>
+      <div class="r-meta"><span>${dm(e.check_in)} → ${dm(e.check_out)}</span>
+        <span>${esc(e.hospede_nome || '')}</span>
         ${e.codigo_canal ? `<span>${esc(e.codigo_canal)}</span>` : ''}</div></div>
     <div class="when"><b>${dm(String(e.cancelada_em || '').slice(0, 10))}</b>${String(e.cancelada_em || '').slice(11, 16)}</div>
     <div class="chips">${chipsHTML(st)}</div></div></div>`;
@@ -821,13 +1003,21 @@ function rowLimpeza(l, st) {
   const res = l.origem === 'check-out';
   const tag = res ? '<span class="tag res">Check-out</span>'
     : l.origem === 'manutencao' ? '<span class="tag manut">Manutenção</span>'
+    : l.origem === 'extra' ? '<span class="tag extra">Extra</span>'
     : '<span class="tag bloq">Bloqueio</span>';
+  const entrada = l.com_entrada ? '<span class="tag entrada">Com entrada</span>' : '';
+  const alerta = l.alerta ? `<span class="tag verif">${esc(l.alerta)}</span>` : '';
   const n = l.ocorrencia || '';
-  return `<div class="row ${n ? 'sev-warn' : (pendOf(st) ? '' : 'sev-ok')}"><div class="sev"></div><div class="r-in">
-    <div class="r-main"><div class="r-top"><span class="apto">${esc(l.apartamento)}</span>${tag}
+  const desc = l.origem === 'extra'
+    ? (l.tipo_extra === 'repasse' ? 'Repasse por problema de limpeza' : 'Limpeza contratada pelo hóspede')
+      + (l.valor ? ' · ' + brl(l.valor) : '') + (l.nota ? ' · ' + esc(l.nota) : '')
+    : res ? 'Check-out de hóspede'
+    : l.origem === 'manutencao' ? 'Manutenção — verificação diferente da de hóspede'
+    : 'Bloqueio do proprietário — verificação diferente';
+  return `<div class="row ${l.alerta ? 'sev-warn' : n ? 'sev-warn' : (pendOf(st) ? '' : 'sev-ok')}"><div class="sev"></div><div class="r-in">
+    <div class="r-main"><div class="r-top"><span class="apto">${esc(l.apartamento)}</span>${tag}${entrada}${alerta}
       <span class="resid">${esc(l.empresa || 'SEM EMPRESA')}</span></div>
-      <div class="guest">${res ? 'Check-out de hóspede' : l.origem === 'manutencao'
-        ? 'Manutenção — verificação diferente da de hóspede' : 'Bloqueio do proprietário — verificação diferente'}</div></div>
+      <div class="guest">${desc}</div></div>
     <div class="when"><b>${esc(l.status)}</b>${dm(l.dia)}</div>
     <div class="chips">${chipsHTML(st)}</div>
     <div class="occ"><textarea class="${n ? 'has' : ''}" data-limpeza="${l.id}" rows="1"
@@ -838,12 +1028,88 @@ function rowLimpeza(l, st) {
 function render() {
   document.getElementById('hint').textContent = HINTS[view];
   document.getElementById('clr').hidden = !(flt || onlyPend || q);
-  const L = filtered(), el = document.getElementById('rows');
+  const el = document.getElementById('rows');
+  // Na agenda não existe "pendente" nem busca por hóspede: esconder é mais
+  // honesto que deixar dois controles que não fazem nada.
+  const soAgenda = view === 'agenda';
+  document.getElementById('onlyPend').hidden = soAgenda;
+  document.getElementById('q').hidden = soAgenda;
+  if (soAgenda) { el.innerHTML = agendaHTML(); return; }
+  const L = filtered();
   if (!L.length) { el.innerHTML = '<div class="empty">Nada aqui com os filtros atuais.</div>'; return; }
   el.innerHTML = L.map(x => { const st = stOf(x);
-    return x.t === 'R' ? rowReserva(x.d, st) : x.t === 'E' ? rowEvento(x.d, st)
+    return x.t === 'R' ? rowReserva(x.d, st) : x.t === 'H' ? rowInHouse(x.d, st)
+         : x.t === 'A' ? rowAlteracao(x.d, st) : x.t === 'E' ? rowEvento(x.d, st)
          : x.t === 'B' ? rowBloqueio(x.d, st) : rowLimpeza(x.d, st); }).join('');
 }
+/* ---------------- agenda das empresas ---------------- */
+
+const brl = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const ordemApto = (a, b) => a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' });
+
+// Uma linha da mensagem. O sufixo é o que a empresa precisa saber ANTES de
+// sair de casa: se tem hóspede entrando no mesmo dia (a limpeza não pode
+// atrasar) e se é para conferir antes (hóspede pode estar permanecendo).
+function linhaAgenda(l) {
+  const marcas = [];
+  if (l.com_entrada) marcas.push('Com entrada');
+  if (l.alerta) marcas.push(l.alerta);
+  if (l.origem === 'extra') marcas.push('Limpeza extra');
+  if (l.origem === 'manutencao') marcas.push('Manutenção');
+  if (l.origem === 'bloqueio') marcas.push('Bloqueio');
+  return l.apartamento + (marcas.length ? ' - ' + marcas.join(' - ') : '');
+}
+
+function mensagemEmpresa(empresa) {
+  const saudacao = (() => { const h = new Date().getHours();
+    return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; })();
+  const bloco = (dia, titulo) => {
+    const itens = D.limpezas.filter(l => l.dia === dia && (l.empresa || 'SEM EMPRESA') === empresa)
+                            .map(linhaAgenda).sort(ordemApto);
+    return itens.length ? titulo + '\n' + itens.join('\n') : '';
+  };
+  const partes = [
+    bloco(AMANHA, 'LIMPEZAS PARA AMANHÃ (' + dm(AMANHA) + ')'),
+    bloco(DEPOIS, 'LIMPEZAS PARA ' + dm(DEPOIS))
+  ].filter(Boolean);
+  return saudacao + ', segue planejamento das limpezas:\n\n' + partes.join('\n\n');
+}
+
+function agendaHTML() {
+  const dias = [AMANHA, DEPOIS];
+  const daJanela = D.limpezas.filter(l => dias.includes(l.dia));
+  if (!daJanela.length)
+    return '<div class="empty">Nenhuma limpeza prevista para amanhã ou depois de amanhã. ' +
+           'Se isso parecer errado, veja quando foi a última sincronização no topo.</div>';
+
+  const empresas = [...new Set(daJanela.map(l => l.empresa || 'SEM EMPRESA'))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  return empresas.map(emp => {
+    const secoes = dias.map(d => {
+      const itens = daJanela.filter(l => l.dia === d && (l.empresa || 'SEM EMPRESA') === emp);
+      if (!itens.length) return '';
+      const titulo = d === AMANHA ? 'AMANHÃ · ' + dm(d) : dm(d);
+      return `<div class="ag-dia"><div class="ag-dia-t">${titulo}<span>${itens.length}</span></div>
+        ${itens.map(linhaAgenda).sort(ordemApto).map(t => {
+          const [apto, ...resto] = t.split(' - ');
+          return `<div class="ag-item"><span>${esc(apto)}</span>${
+            resto.map(r => `<em class="${r === 'Verificar' ? 'w' : ''}">${esc(r)}</em>`).join('')}</div>`;
+        }).join('')}</div>`;
+    }).filter(Boolean).join('');
+
+    const total = daJanela.filter(l => (l.empresa || 'SEM EMPRESA') === emp).length;
+    const aviso = emp === 'SEM EMPRESA'
+      ? `<div class="ag-aviso">Estes apartamentos não têm empresa no cadastro. Acerte em
+         <b>cadastros_apartamentos</b> no Supabase e a próxima sincronização corrige.</div>` : '';
+
+    return `<div class="ag-card"><div class="ag-top">
+        <div><b>${esc(emp)}</b><span class="ag-n">${total} limpeza${total > 1 ? 's' : ''} em 2 dias</span></div>
+        <button class="ag-copiar" data-emp="${esc(emp)}">Copiar mensagem</button></div>
+      ${aviso}${secoes}</div>`;
+  }).join('');
+}
+
 function renderTabs() {
   document.getElementById('tabbar').innerHTML = TABS.map(t =>
     `<button role="tab" data-v="${t.id}" aria-selected="${t.id === view}">${t.label}<span class="n">${t.n()}</span></button>`).join('');
@@ -854,19 +1120,29 @@ function renderKpis() {
   const hoje = D.checkins.filter(c => c.check_in === HOJE);
   const pend = hoje.reduce((a, r) => a + pendOf(stReserva(r)), 0);
   const semTel = D.checkins.filter(c => !c.hospede_fone).length;
-  const alt = D.eventos.filter(e => e.status === 'alterada').length;
-  const bloqLimp = D.limpezas.filter(l => l.origem !== 'check-out').length;
+  const hojeL = limpDe(HOJE);
+  const bloqLimp = hojeL.filter(l => l.origem !== 'check-out').length;
   const semLimp = hoje.filter(r => stReserva(r).items.find(i => i.f === 'limpeza').s !== 'done').length;
+  const amanhaL = limpDe(AMANHA);
+  const verificar = D.limpezas.filter(l => l.alerta).length;
+  const semEmpresa = D.limpezas.filter(l => !l.empresa).length;
   const K = [
     { v: D.novas.length, k: 'novas reservas nas últimas 24h', c: 'is-acc', go: ['novas', null] },
     { v: hoje.length, k: 'check-ins hoje', go: ['hoje', null] },
     { v: pend, k: 'pendências nos check-ins de hoje', c: pend ? 'is-crit' : '', go: ['hoje', null], pend: true },
-    { v: D.eventos.length, k: 'alterações e cancelamentos em 7 dias', x: alt + ' exigem trocar credenciais', c: 'is-warn', go: ['eventos', null] },
-    { v: D.limpezas.length, k: 'limpezas de hoje', x: bloqLimp + ' vindas de bloqueio', go: ['limp', null] },
-    { v: bloqLimp, k: 'limpezas que não vieram de check-out', c: 'is-viol', go: ['limp', 'origem'] },
+    { v: D.inhouse.length, k: 'apartamentos ocupados agora',
+      x: D.inhouse.filter(r => r.sai_hoje).length + ' com saída hoje', go: ['inhouse', null] },
+    { v: D.alt.length, k: 'alterações em hóspedes no apartamento',
+      c: D.alt.length ? 'is-warn' : '', x: 'exigem trocar credenciais', go: ['alt', null] },
+    { v: D.canc.length, k: 'cancelamentos que exigem ação hoje',
+      c: D.canc.length ? 'is-crit' : '', go: ['canc', null] },
+    { v: hojeL.length, k: 'limpezas de hoje', x: bloqLimp + ' vindas de bloqueio', go: ['limp', null] },
+    { v: amanhaL.length, k: 'limpezas de amanhã para avisar às empresas',
+      x: verificar ? verificar + ' pedem verificação' : 'nenhuma pendência', c: 'is-acc', go: ['agenda', null] },
     { v: semTel, k: 'reservas sem telefone do hóspede', c: semTel ? 'is-warn' : '', go: ['prox', 'semTel'] },
-    { v: semLimp, k: 'check-ins de hoje com limpeza não confirmada', c: semLimp ? 'is-crit' : '', go: ['hoje', 'semLimp'] }
-  ];
+    { v: semLimp, k: 'check-ins de hoje com limpeza não confirmada', c: semLimp ? 'is-crit' : '', go: ['hoje', 'semLimp'] },
+    { v: semEmpresa, k: 'limpezas sem empresa no cadastro', c: semEmpresa ? 'is-viol' : '', go: ['agenda', null] }
+  ].filter(x => x.v > 0 || ['check-ins hoje', 'limpezas de hoje'].includes(x.k));
   document.getElementById('kpis').innerHTML = K.map((x, i) =>
     `<button class="kpi ${x.c || ''}" data-i="${i}" aria-pressed="false">
       <div class="v">${x.v}</div><div class="k">${x.k}</div>${x.x ? `<div class="x">${x.x}</div>` : ''}</button>`).join('');
@@ -881,6 +1157,69 @@ function goto(v, f, p) {
   document.querySelectorAll('.kpi').forEach(b => b.setAttribute('aria-pressed', 'false'));
 }
 
+/* ---------------- limpeza adicional ---------------- */
+
+let extraCtx = null;
+
+function abrirExtra(ctx) {
+  extraCtx = ctx;
+  const dlg = document.getElementById('dlgExtra');
+  document.getElementById('exApto').textContent = ctx.apto;
+  document.getElementById('exEmp').textContent = ctx.emp || 'sem empresa no cadastro';
+  const d = document.getElementById('exData');
+  // O limite não é decoração: limpeza marcada depois do check-out é limpeza
+  // que ninguém vai fazer — o hóspede já foi embora e a diária acabou.
+  d.min = HOJE; d.max = ctx.ate; d.value = HOJE < ctx.ate ? HOJE : ctx.ate;
+  document.getElementById('exTipo').value = 'contratada';
+  document.getElementById('exValor').value = '';
+  document.getElementById('exNota').value = '';
+  document.getElementById('exErro').textContent = '';
+  avisoMesmoDia();
+  dlg.showModal();
+}
+
+function avisoMesmoDia() {
+  const d = document.getElementById('exData').value;
+  document.getElementById('exAviso').hidden = (d !== HOJE);
+}
+
+async function salvarExtra() {
+  const btn = document.getElementById('exSalvar');
+  const erro = document.getElementById('exErro');
+  const data = document.getElementById('exData').value;
+  if (!data) { erro.textContent = 'Escolha a data da limpeza.'; return; }
+  if (data > extraCtx.ate) { erro.textContent = 'A data não pode passar do check-out (' + dm(extraCtx.ate) + ').'; return; }
+  if (data < HOJE) { erro.textContent = 'Não dá para agendar limpeza no passado.'; return; }
+
+  const bruto = document.getElementById('exValor').value.replace(/\./g, '').replace(',', '.').trim();
+  const valor = bruto === '' ? null : Number(bruto);
+  if (valor !== null && !isFinite(valor)) { erro.textContent = 'Valor inválido. Use algo como 180,00.'; return; }
+
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  const { error } = await sb.from('cleanings').insert({
+    dia: data, listing_id: extraCtx.lid, empresa: extraCtx.emp || null,
+    origem: 'extra', origem_id: extraCtx.reserva, status: 'pendente',
+    tipo_extra: document.getElementById('exTipo').value,
+    valor: valor,
+    nota: document.getElementById('exNota').value.trim() || null,
+    // Limpeza para hoje entra com alerta: a empresa montou a rota de manhã e
+    // pode não ter equipe sobrando. Quem confirma é gente, no telefone.
+    alerta: data === HOJE ? 'Verificar disponibilidade da empresa' : null,
+    lancada_por: usuario.email, por: usuario.email
+  });
+  btn.disabled = false; btn.textContent = 'Lançar limpeza';
+
+  if (error) {
+    erro.textContent = error.code === '23505'
+      ? 'Já existe uma limpeza extra para esse apartamento nesse dia.'
+      : 'Não consegui salvar: ' + error.message;
+    return;
+  }
+  document.getElementById('dlgExtra').close();
+  await carregar();
+  goto('limp', null, false);
+}
+
 /* ---------------- eventos ---------------- */
 
 document.getElementById('kpis').addEventListener('click', e => {
@@ -891,7 +1230,26 @@ document.getElementById('kpis').addEventListener('click', e => {
 document.getElementById('tabbar').addEventListener('click', e => {
   const b = e.target.closest('[role=tab]'); if (!b) return; goto(b.dataset.v, null, false);
 });
-document.getElementById('rows').addEventListener('click', e => {
+document.getElementById('rows').addEventListener('click', async e => {
+  const cp = e.target.closest('.ag-copiar');
+  if (cp) {
+    const txt = mensagemEmpresa(cp.dataset.emp);
+    try { await navigator.clipboard.writeText(txt); cp.textContent = 'Copiado ✓'; }
+    catch (_) {
+      // Sem permissão de área de transferência: mostra o texto para copiar na mão.
+      const ta = document.getElementById('exFallback');
+      ta.value = txt; document.getElementById('dlgTexto').showModal(); ta.select();
+      cp.textContent = 'Copiar mensagem'; return;
+    }
+    setTimeout(() => { cp.textContent = 'Copiar mensagem'; }, 1800);
+    return;
+  }
+  const ex = e.target.closest('[data-extra]');
+  if (ex) {
+    abrirExtra({ reserva: ex.dataset.extra, apto: ex.dataset.apto,
+                 lid: ex.dataset.lid, emp: ex.dataset.emp, ate: ex.dataset.ate });
+    return;
+  }
   const b = e.target.closest('.chip'); if (!b || b.disabled) return;
   const novo = b.dataset.s !== 'done';
   if (b.dataset.f === '__status') {
@@ -908,6 +1266,13 @@ document.getElementById('rows').addEventListener('input', e => {
   clearTimeout(debounce);
   debounce = setTimeout(() => anotarOcorrencia(Number(t.dataset.limpeza), t.value.trim()), 700);
 });
+document.getElementById('exData').addEventListener('change', avisoMesmoDia);
+document.getElementById('exSalvar').addEventListener('click', salvarExtra);
+document.getElementById('exCancelar').addEventListener('click',
+  () => document.getElementById('dlgExtra').close());
+document.getElementById('txFechar').addEventListener('click',
+  () => document.getElementById('dlgTexto').close());
+
 const op = document.getElementById('onlyPend');
 op.addEventListener('click', () => { onlyPend = !onlyPend; op.setAttribute('aria-pressed', String(onlyPend)); render(); });
 document.getElementById('q').addEventListener('input', e => { q = e.target.value; render(); });
