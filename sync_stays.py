@@ -60,7 +60,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v4.1 (nome completo do apto, bloqueios que somem, cancelamento honesto)"
+VERSAO = "v4.2 (pré-reservas e reservas que somem do export)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -554,6 +554,10 @@ def montar_reserva(res: dict, listing_id: str | None) -> dict:
         "canal": (res.get("partnerName")
                   or (res.get("partner") or {}).get("name")
                   or res.get("agent") or None),
+        # reserved = pré-reserva (bloqueio provisório, ainda não confirmado);
+        # booked e contract = confirmada. É o que permite o painel avisar que
+        # aquele check-in ainda pode não acontecer.
+        "tipo": (res.get("type") or "").strip().lower() or None,
         "criada_em": res.get("creationDate") or res.get("createdAt"),
         "raw": res,
         "sync_em": datetime.now(TZ).isoformat(),
@@ -594,6 +598,60 @@ def mapa_listings() -> tuple:
     linhas = consultar("listings", {"select": "id,nome"})
     return ({l["id"]: l["nome"] for l in linhas},
             indice_de_nomes((l["nome"], l["id"]) for l in linhas))
+
+
+def baixar_sumidas(vistos: set) -> int:
+    """
+    Reserva que some do export deixou de existir na Stays. Aqui ela sai do
+    painel.
+
+    Era o mesmo defeito dos bloqueios, na tabela de reservas: a gravação é
+    upsert, então o que a API para de devolver fica no banco para sempre. Foi
+    o caso das três pré-reservas do Brera 22 — duas canceladas, as três
+    continuavam no painel como se fossem chegar.
+
+    O `type=canceled` do outro endpoint não cobria isso: ele só devolve o que
+    a Stays classifica como cancelamento, e pré-reserva que expira ou é
+    descartada nem sempre entra nessa lista. O export, por outro lado, é a
+    lista autoritativa do que está ativo — quem não está nela, não está ativo.
+
+    Duas travas, porque apagar reserva por engano é bem pior que deixar uma
+    a mais:
+
+    1. Só reservas cuja data ainda cai na janela consultada. Uma reserva de
+       dezembro não está no export por não ser da janela, e não por ter sido
+       cancelada.
+    2. Se mais de 30% dos candidatos fossem baixados de uma vez, não faz
+       nada e grita. Resposta parcial da API é bem mais provável do que a
+       casa inteira cancelar junto.
+    """
+    candidatas = consultar("reservations", {
+        "select": "id,check_in,check_out",
+        "status": "eq.ativa",
+        "or": f"(and(check_in.gte.{dia(-JANELA_ARRIVAL_ATRAS)},"
+              f"check_in.lte.{dia(JANELA_ARRIVAL_FRENTE)}),"
+              f"and(check_out.gte.{dia(-JANELA_DEPARTURE_ATRAS)},"
+              f"check_out.lte.{dia(JANELA_DEPARTURE_FRENTE)}))"})
+
+    sumidas = [c["id"] for c in candidatas if c["id"] not in vistos]
+    if not sumidas:
+        return 0
+
+    if len(sumidas) > max(5, len(candidatas) * 0.3):
+        log(f"  ATENÇÃO: {len(sumidas)} de {len(candidatas)} reservas sumiram do "
+            f"export de uma vez. Isso é resposta incompleta da Stays, não "
+            f"cancelamento em massa — nenhuma foi baixada.")
+        return 0
+
+    agora = datetime.now(TZ).isoformat()
+    for i in range(0, len(sumidas), 100):
+        pedaco = ",".join(f'"{x}"' for x in sumidas[i:i + 100])
+        atualizar("reservations", {"id": f"in.({pedaco})"},
+                  {"status": "cancelada", "cancelada_em": agora, "era_ativa": True})
+
+    log(f"  {len(sumidas)} reserva(s) sumiram da Stays e saíram do painel: "
+        + ", ".join(sumidas[:8]) + ("…" if len(sumidas) > 8 else ""))
+    return len(sumidas)
 
 
 def marcar_alteracoes(linhas: list, notas: dict) -> int:
@@ -703,8 +761,17 @@ def passo_reservas(validos: set, por_nome: dict) -> int:
     log(f"reservas: {len(linhas)} ativas gravadas "
         f"(de {brutas} recebidas, {len(vistos)} únicas, "
         f"{sem_imovel} sem imóvel no catálogo, {sem_data} sem data)")
+
+    porTipo = {}
+    for l in linhas:
+        porTipo[l.get("tipo") or "sem tipo"] = porTipo.get(l.get("tipo") or "sem tipo", 0) + 1
+    if porTipo:
+        log("  por tipo: " + ", ".join(f"{k}={v}" for k, v in sorted(porTipo.items())))
     if alteradas:
         log(f"  alterações detectadas nesta rodada: {alteradas}")
+
+    if brutas:
+        baixar_sumidas(vistos)
 
     # Descartar quase tudo é sinal de que o casamento quebrou, não de que
     # o dia foi fraco. Antes de gritar, mostrar o formato do que veio —
