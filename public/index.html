@@ -182,6 +182,8 @@ dialog::backdrop{background:rgba(19,28,37,.5)}
 .btn-sec{border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);
   border-radius:6px;padding:9px 16px;font-size:14px;cursor:pointer}
 .chip.acao{border-color:var(--accent);color:var(--accent-ink)}
+.resid.canal{opacity:.62}
+.tag.pre{background:var(--viol-soft);color:var(--viol)}
 #atualizar{margin-left:10px;border:1px solid var(--line-2);background:var(--surface);
   color:var(--ink-2);border-radius:6px;padding:4px 11px;font-size:12.5px;cursor:pointer}
 #atualizar:hover:not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
@@ -342,7 +344,7 @@ const CONFIG = {
       <div class="p-head">
         <span class="hint" id="hint"></span>
         <button class="toggle" id="onlyPend" aria-pressed="false">Só pendentes</button>
-        <input class="srch" id="q" type="search" placeholder="Apartamento ou hóspede">
+        <input class="srch" id="q" type="search" placeholder="Apartamento, hóspede ou código">
         <button class="clr" id="clr" hidden>Limpar filtros</button>
       </div>
       <div id="rows"><div class="carregando">Carregando…</div></div>
@@ -466,7 +468,7 @@ const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
 // Mesmo carimbo do sync_stays.py, pelo mesmo motivo: responder sem
 // adivinhação a "é o painel novo que está no ar?". Aparece no diário de
 // bordo da tela de login e no console. Suba a versão sempre que mexer.
-const VERSAO_PAINEL = 'v2.3 (botão atualizar agora)';
+const VERSAO_PAINEL = 'v2.5 (pré-reservas visíveis)';
 console.log('[painel] ' + VERSAO_PAINEL);
 
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -913,7 +915,7 @@ function baseList() {
   // Com o filtro de telefone a lista volta a incluir HOJE: uma reserva que
   // chega hoje sem telefone é a mais urgente de todas — era justamente a que
   // sumia quando a aba passou a mostrar só de amanhã em diante.
-  if (view === 'prox')    return (flt === 'semTel' ? D.checkins : proximos()).map(d => ({ t: 'R', d }));
+  if (view === 'prox')    return (flt === 'semTel' || flt === 'pre' ? D.checkins : proximos()).map(d => ({ t: 'R', d }));
   if (view === 'alt')     return D.alt.map(d => ({ t: 'A', d }));
   if (view === 'canc')    return D.canc.map(d => ({ t: 'E', d }));
   if (view === 'bloq')    return D.bloqueios.map(d => ({ t: 'B', d }));
@@ -929,11 +931,15 @@ const stOf = x => x.t === 'R' || x.t === 'H' ? stReserva(x.d)
 function filtered() {
   let L = baseList();
   if (flt === 'semTel')   L = L.filter(x => x.t === 'R' && !x.d.hospede_fone);
+  if (flt === 'pre')      L = L.filter(x => x.d.pre_reserva);
   if (flt === 'origem')   L = L.filter(x => x.t === 'L' && x.d.origem !== 'check-out');
   if (flt === 'semLimp')  L = L.filter(x => x.t === 'R' && stReserva(x.d).items.find(i => i.f === 'limpeza').s !== 'done');
   if (onlyPend) L = L.filter(x => pendOf(stOf(x)) > 0);
   if (q) { const t = q.toLowerCase();
-    L = L.filter(x => ((x.d.apartamento || '') + ' ' + (x.d.hospede_nome || '') + ' ' + (x.d.empresa || '')).toLowerCase().includes(t)); }
+    L = L.filter(x => ((x.d.apartamento || '') + ' ' + (x.d.hospede_nome || '') + ' '
+                     + (x.d.empresa || '') + ' ' + (x.d.id || '') + ' '
+                     + (x.d.codigo_canal || '') + ' ' + (x.d.origem_id || '')
+                      ).toLowerCase().includes(t)); }
   return L;
 }
 
@@ -948,6 +954,28 @@ function whenL(ci) {
   return { c: '', t: dm(ci), s: 'check-in' };
 }
 
+// O código que a recepção usa para achar a reserva na Stays é o id interno
+// (OB09J). O codigo_canal (partnerCode) é o código do CANAL — e é nulo em
+// toda reserva direta, que é a maioria aqui. Mostrar só ele deixava o card
+// sem identificação nenhuma justamente nas reservas da casa.
+//
+// Então: o id interno sempre, e o do canal ao lado quando existir.
+// Pré-reserva é bloqueio provisório: pode virar reserva firme ou
+// simplesmente sumir. Mostrar igual à confirmada fazia o time preparar
+// apartamento para hóspede que talvez nunca chegue — foi o caso das três
+// do Brera 22.
+const preTag = r => r.pre_reserva
+  ? '<span class="tag pre" title="ainda não confirmada na Stays">Pré-reserva</span>' : '';
+
+function codigos(r) {
+  const interno = String(r.id || '').trim();
+  const canal = String(r.codigo_canal || '').trim();
+  let html = interno ? `<span class="resid" title="código interno da Stays">${esc(interno)}</span>` : '';
+  if (canal && canal !== interno)
+    html += `<span class="resid canal" title="código do canal">${esc(canal.slice(0, 16))}</span>`;
+  return html;
+}
+
 function rowReserva(r, st) {
   const p = pendOf(st), w = whenL(r.check_in);
   const sev = r.check_in === HOJE && p ? 'sev-crit' : (r.check_in === AMANHA && p ? 'sev-warn' : (p ? '' : 'sev-ok'));
@@ -957,7 +985,7 @@ function rowReserva(r, st) {
     : `<span class="miss">sem telefone</span>`;
   return `<div class="row ${sev}"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(r.apartamento)}</span>
-      <span class="resid">${esc(String(r.codigo_canal || '').slice(0, 12))}</span>${canal}</div>
+      ${codigos(r)}${preTag(r)}${canal}</div>
       <div class="guest">${esc(r.hospede_nome || '— hóspede ainda não identificado —')}</div>
       <div class="r-meta"><span>${dm(r.check_in)} → ${dm(r.check_out)}</span>
         <span>${esc(r.hospedes || '?')} hósp.</span>${tel}
@@ -979,7 +1007,7 @@ function rowInHouse(r, st) {
   const noites = r.noites_restantes;
   return `<div class="row ${r.sai_hoje ? 'sev-warn' : 'sev-ok'}"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(r.apartamento)}</span>
-      <span class="resid">${esc(String(r.id || '').slice(0, 12))}</span>${marca}${perm}${semL}</div>
+      ${codigos(r)}${preTag(r)}${marca}${perm}${semL}</div>
       <div class="guest">${esc(r.hospede_nome || '— hóspede ainda não identificado —')}</div>
       <div class="r-meta"><span>${dm(r.check_in)} → ${dm(r.check_out)}</span>
         <span>${esc(r.hospedes || '?')} hósp.</span>${tel}
@@ -998,7 +1026,7 @@ function rowAlteracao(e, st) {
   const q = String(e.alterada_em || '');
   return `<div class="row sev-warn"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(e.apartamento)}</span>
-      <span class="tag alt">Alterada</span>
+      ${codigos(e)}${preTag(e)}<span class="tag alt">Alterada</span>
       ${e.tem_facial ? '<span class="tag facial">Tem facial</span>' : ''}</div>
       <div class="guest">${esc(e.alteracao_detalhe || 'A reserva mudou.')}</div>
       <div class="r-meta"><span>${dm(e.check_in)} → ${dm(e.check_out)}</span>
@@ -1012,12 +1040,11 @@ function rowEvento(e, st) {
   const dentro = e.estava_hospedado;
   return `<div class="row sev-crit"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(e.apartamento)}</span>
-      <span class="tag canc">Cancelada</span>
+      ${codigos(e)}${preTag(e)}<span class="tag canc">Cancelada</span>
       ${dentro ? '<span class="tag perm">Estava hospedado</span>' : '<span class="tag entrada">Chegava hoje</span>'}</div>
       <div class="guest">${esc(e.hospede_nome || '— hóspede não identificado —')}</div>
       <div class="r-meta"><span>${dm(e.check_in)} → ${dm(e.check_out)}</span>
         ${e.hospede_fone ? `<span>📱 ${esc(e.hospede_fone)}</span>` : ''}
-        ${e.codigo_canal ? `<span>${esc(e.codigo_canal)}</span>` : ''}
         <span class="acao-txt">${dentro
           ? 'recolher credenciais, avisar a portaria e liberar a limpeza'
           : 'desfazer credenciais, facial e vaga'}</span></div></div>
@@ -1031,6 +1058,7 @@ function rowBloqueio(b, st) {
   const dl = dias === 0 ? 'HOJE' : dias === 1 ? 'AMANHÃ' : dias < 0 ? `há ${-dias}d` : `${dias}d`;
   return `<div class="row ${dias >= 0 && dias <= 2 ? 'sev-warn' : 'sev-viol'}"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(b.apartamento)}</span>
+      <span class="resid" title="código interno da Stays">${esc(String(b.id || ''))}</span>
       <span class="tag ${man ? 'manut' : 'bloq'}">${man ? 'Manutenção' : 'Bloqueio'}</span></div>
       <div class="guest">${b.nota ? esc(b.nota)
         : (man ? 'Serviço técnico no apartamento — precisa de limpeza depois.'
@@ -1063,6 +1091,7 @@ function rowLimpeza(l, st) {
   return `<div class="row ${cancelada ? 'cancelada' : l.alerta ? 'sev-warn' : n ? 'sev-warn' : (pendOf(st) ? '' : 'sev-ok')}"><div class="sev"></div><div class="r-in">
     <div class="r-main"><div class="r-top"><span class="apto">${esc(l.apartamento)}</span>${tag}${
       cancelada ? '<span class="tag canc">Cancelada</span>' : entrada + alerta}
+      ${l.origem_id ? `<span class="resid" title="reserva ou bloqueio que gerou esta limpeza">${esc(l.origem_id)}</span>` : ''}
       <span class="resid">${esc(l.empresa || 'SEM EMPRESA')}</span></div>
       <div class="guest">${desc}</div></div>
     <div class="when"><b>${esc(l.status)}</b>${dm(l.dia)}</div>
@@ -1076,6 +1105,8 @@ function render() {
   document.getElementById('hint').textContent =
     (view === 'prox' && flt === 'semTel')
       ? 'Reservas sem telefone do hóspede, incluindo os check-ins de hoje.'
+      : (view === 'prox' && flt === 'pre')
+      ? 'Pré-reservas: ainda não confirmadas na Stays. Podem virar reserva firme ou simplesmente sumir.'
       : HINTS[view];
   document.getElementById('clr').hidden = !(flt || onlyPend || q);
   const el = document.getElementById('rows');
@@ -1192,7 +1223,10 @@ function renderKpis() {
       x: verificar ? verificar + ' pedem verificação' : 'nenhuma pendência', c: 'is-acc', go: ['agenda', null] },
     { v: semTel, k: 'reservas sem telefone do hóspede', c: semTel ? 'is-warn' : '', go: ['prox', 'semTel'] },
     { v: semLimp, k: 'check-ins de hoje com limpeza não confirmada', c: semLimp ? 'is-crit' : '', go: ['hoje', 'semLimp'] },
-    { v: semEmpresa, k: 'limpezas sem empresa no cadastro', c: semEmpresa ? 'is-viol' : '', go: ['agenda', null] }
+    { v: semEmpresa, k: 'limpezas sem empresa no cadastro', c: semEmpresa ? 'is-viol' : '', go: ['agenda', null] },
+    { v: D.checkins.filter(c => c.pre_reserva).length,
+      k: 'pré-reservas ainda não confirmadas', x: 'podem não acontecer',
+      c: 'is-viol', go: ['prox', 'pre'] }
   ].filter(x => x.v > 0 || ['check-ins hoje', 'limpezas de hoje'].includes(x.k));
   document.getElementById('kpis').innerHTML = K.map((x, i) =>
     `<button class="kpi ${x.c || ''}" data-i="${i}" aria-pressed="false">
