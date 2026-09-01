@@ -60,7 +60,7 @@ from urllib3.util.retry import Retry
 # adivinhação, a pergunta que já custou caro: "é a versão nova que está
 # rodando?". Se o log não mostrar esta linha, o arquivo no repositório é
 # outro. Suba a versão sempre que mexer no arquivo.
-VERSAO = "v4.2 (pré-reservas e reservas que somem do export)"
+VERSAO = "v4.3 (um ano de reservas, limpezas até D+7)"
 
 TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 
@@ -68,9 +68,17 @@ TZ = timezone(timedelta(hours=-3))          # America/Sao_Paulo
 # execução — aqui não há motivo para exagerar: o time trabalha o mês
 # corrente, e o histórico já está no banco.
 JANELA_ARRIVAL_ATRAS = 3
-JANELA_ARRIVAL_FRENTE = 60
+# Um ano à frente. Era 60 dias, e por isso a aba de futuras mostrava só dois
+# meses: o que não é buscado da Stays não existe no banco, e nenhum filtro no
+# painel inventa reserva que nunca foi baixada.
+JANELA_ARRIVAL_FRENTE = 365
 JANELA_DEPARTURE_ATRAS = 15
 JANELA_DEPARTURE_FRENTE = 15
+
+# Até onde a sincronização PROPÕE limpeza. A agenda das empresas usa D+1 e
+# D+2; uma semana dá folga para a aba de limpezas mostrar o que vem pela
+# frente sem inchar a tabela.
+DIAS_LIMPEZA = 7
 
 TEMPO_LIMITE = 60          # segundos por chamada HTTP
 LOTE = 500                 # registros por gravação no Postgres
@@ -975,8 +983,8 @@ def passo_limpezas(validos: set) -> int:
 
     Nunca mexe no que o time já escreveu: a gravação é ignore-duplicates.
     """
-    dias = [dia(0), dia(1), dia(2)]
-    d_ini, d_fim = dias[0], dias[2]
+    dias = [dia(n) for n in range(DIAS_LIMPEZA + 1)]
+    d_ini, d_fim = dias[0], dias[-1]
 
     saidas = consultar("reservations", {
         "select": "id,listing_id,check_in,check_out,hospede_nome,nota_interna",
@@ -1045,10 +1053,13 @@ def passo_limpezas(validos: set) -> int:
         if r.status_code >= 300:
             raise RuntimeError(f"cleanings: HTTP {r.status_code} — {r.text[:400]}")
 
-    for d in dias:
+    for d in dias[:3]:
         doDia = [l for l in linhas if l["dia"] == d]
         bloq = sum(1 for l in doDia if l["origem"] != "check-out")
         log(f"limpezas {br(d)}: {len(doDia)} ({bloq} de bloqueio)")
+    if len(dias) > 3:
+        resto = [l for l in linhas if l["dia"] > dias[2]]
+        log(f"limpezas até {br(dias[-1])}: mais {len(resto)}")
     if sem_limpeza or a_verificar:
         log(f"  {sem_limpeza} puladas por \"sem limpeza\", "
             f"{a_verificar} marcadas para verificar (hóspede permanece)")
