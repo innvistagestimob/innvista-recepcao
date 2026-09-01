@@ -184,6 +184,28 @@ dialog::backdrop{background:rgba(19,28,37,.5)}
 .chip.acao{border-color:var(--accent);color:var(--accent-ink)}
 .resid.canal{opacity:.62}
 .tag.pre{background:var(--viol-soft);color:var(--viol)}
+
+/* período e atalhos */
+.atalhos{display:flex;gap:5px;flex-wrap:wrap}
+.atalhos button{border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2);
+  border-radius:20px;padding:4px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.atalhos button:hover{border-color:var(--accent);color:var(--accent-ink)}
+.atalhos button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.periodo{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted)}
+.periodo input{font:inherit;padding:3px 7px;border:1px solid var(--line-2);border-radius:6px;
+  background:var(--ground);color:var(--ink)}
+.periodo[hidden]{display:none!important}
+
+/* anotações da operação */
+.anot{flex-basis:100%;margin-top:8px;display:flex;align-items:flex-start;gap:8px}
+.anot-add{border:1px dashed var(--line-2);background:transparent;color:var(--muted);
+  border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer}
+.anot-add:hover{border-color:var(--accent);color:var(--accent-ink)}
+.anot textarea{flex:1;font:inherit;font-size:13px;padding:6px 9px;border-radius:6px;resize:vertical;
+  border:1px solid var(--line);background:var(--ground);color:var(--ink)}
+.anot textarea.has,.anot.tem textarea{border-color:var(--accent-soft);background:var(--accent-soft)}
+.anot-quem{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--muted);
+  padding-top:8px;white-space:nowrap}
 #atualizar{margin-left:10px;border:1px solid var(--line-2);background:var(--surface);
   color:var(--ink-2);border-radius:6px;padding:4px 11px;font-size:12.5px;cursor:pointer}
 #atualizar:hover:not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
@@ -343,6 +365,11 @@ const CONFIG = {
       <div id="banner"></div>
       <div class="p-head">
         <span class="hint" id="hint"></span>
+        <div class="atalhos" id="atalhos"></div>
+        <div class="periodo" id="periodo">
+          <span>de</span><input type="date" id="dataDe">
+          <span>até</span><input type="date" id="dataAte">
+        </div>
         <button class="toggle" id="onlyPend" aria-pressed="false">Só pendentes</button>
         <input class="srch" id="q" type="search" placeholder="Apartamento, hóspede ou código">
         <button class="clr" id="clr" hidden>Limpar filtros</button>
@@ -468,7 +495,7 @@ const sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON, {
 // Mesmo carimbo do sync_stays.py, pelo mesmo motivo: responder sem
 // adivinhação a "é o painel novo que está no ar?". Aparece no diário de
 // bordo da tela de login e no console. Suba a versão sempre que mexer.
-const VERSAO_PAINEL = 'v2.5 (pré-reservas visíveis)';
+const VERSAO_PAINEL = 'v2.6 (período, limpezas passado e futuro, anotações)';
 console.log('[painel] ' + VERSAO_PAINEL);
 
 const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -478,12 +505,23 @@ const AMANHA = (() => { const d = new Date(); d.setDate(d.getDate() + 1);
 
 let usuario = null;
 let D = { checkins: [], novas: [], inhouse: [], canc: [], alt: [],
-           bloqueios: [], limpezas: [], tarefas: {} };
+           bloqueios: [], limpezas: [], tarefas: {}, notas: {} };
 const DEPOIS = (() => { const d = new Date(); d.setDate(d.getDate() + 2);
   return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); })();
 const SETE_DIAS = (() => { const d = new Date(); d.setDate(d.getDate() + 7);
   return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); })();
 let view = 'novas', onlyPend = false, q = '', flt = null;
+let dataDe = '', dataAte = '', atalho = null;
+
+// Cada aba tem uma data que é a sua: a de chegada nas reservas, a da
+// alteração nas alterações, a do serviço nas limpezas. O filtro de período
+// usa essa — senão "de 01 a 05" significaria coisas diferentes em cada aba
+// e ninguém confiaria no resultado.
+const CAMPO_DATA = {
+  novas: 'criada_em', hoje: 'check_in', inhouse: 'check_in', prox: 'check_in',
+  alt: 'alterada_em', canc: 'cancelada_em', bloq: 'fim', limp: 'dia', agenda: 'dia'
+};
+const soDia = v => String(v || '').slice(0, 10);
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
   c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -689,11 +727,11 @@ async function carregar() {
   try {
     document.getElementById('estadoSync').textContent = 'atualizando…';
 
-    const daqui = new Date(); daqui.setDate(daqui.getDate() + 10);
-    const ate = daqui.toLocaleDateString('sv-SE');
 
-    const [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, runs] = await Promise.all([
-      sb.from('v_checkin').select('*').gte('check_in', HOJE).lte('check_in', ate).order('check_in'),
+    const [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, notas, runs] = await Promise.all([
+      // Sem teto: a sincronização baixa um ano à frente, e a aba de futuras
+      // mostra tudo o que existe. Quem recorta é o filtro de período.
+      sb.from('v_checkin').select('*').gte('check_in', HOJE).order('check_in').limit(3000),
       sb.from('v_novas_reservas').select('*'),
       sb.from('v_in_house').select('*'),
       sb.from('v_cancelamentos').select('*'),
@@ -705,10 +743,11 @@ async function carregar() {
         .gte('fim', HOJE).lte('inicio', SETE_DIAS).order('fim').limit(200),
       sb.from('v_limpezas').select('*'),
       sb.from('tasks').select('assunto_tipo,assunto_id,item,feito'),
+      sb.from('anotacoes').select('assunto_tipo,assunto_id,texto,por,em'),
       sb.from('sync_runs').select('*').order('inicio', { ascending: false }).limit(1)
     ]);
 
-    const erro = [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, runs].find(r => r.error);
+    const erro = [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, notas, runs].find(r => r.error);
     if (erro) throw erro.error;
 
     D.checkins  = checkins.data || [];
@@ -722,6 +761,11 @@ async function carregar() {
     D.tarefas = {};
     (tarefas.data || []).forEach(t => {
       D.tarefas[t.assunto_tipo + '|' + t.assunto_id + '|' + t.item] = t.feito;
+    });
+
+    D.notas = {};
+    (notas.data || []).forEach(n => {
+      D.notas[n.assunto_tipo + '|' + n.assunto_id] = n;
     });
 
     const r = (runs.data || [])[0];
@@ -782,6 +826,26 @@ async function anotarOcorrencia(id, texto) {
   const { error } = await sb.from('cleanings')
     .update({ ocorrencia: texto || null, por: usuario.email }).eq('id', id);
   if (error) avisar('Não consegui salvar a ocorrência: ' + error.message);
+}
+
+async function salvarAnotacao(chave, texto) {
+  const [tipo, id] = chave.split('|');
+  const limpo = (texto || '').trim();
+
+  if (!limpo) {
+    const { error } = await sb.from('anotacoes').delete()
+      .eq('assunto_tipo', tipo).eq('assunto_id', id);
+    if (error) { avisar('Não consegui apagar a anotação: ' + error.message); return; }
+    delete D.notas[chave];
+    return;
+  }
+
+  const linha = { assunto_tipo: tipo, assunto_id: id, texto: limpo,
+                  por: usuario.email, em: new Date().toISOString() };
+  const { error } = await sb.from('anotacoes').upsert(linha,
+                       { onConflict: 'assunto_tipo,assunto_id' });
+  if (error) { avisar('Não consegui salvar a anotação: ' + error.message); return; }
+  D.notas[chave] = linha;
 }
 
 async function mudarStatusLimpeza(id, status) {
@@ -889,22 +953,22 @@ const TABS = [
   { id: 'novas',   label: 'Novas · 24h',      n: () => D.novas.length },
   { id: 'hoje',    label: 'Check-ins hoje',   n: () => D.checkins.filter(c => c.check_in === HOJE).length },
   { id: 'inhouse', label: 'In house',         n: () => D.inhouse.length },
-  { id: 'prox',    label: 'Próximos 10 dias', n: () => proximos().length },
+  { id: 'prox',    label: 'Próximas reservas', n: () => proximos().length },
   { id: 'alt',     label: 'Alterações',       n: () => D.alt.length },
   { id: 'canc',    label: 'Cancelamentos',    n: () => D.canc.length },
   { id: 'bloq',    label: 'Bloqueios e manutenções', n: () => D.bloqueios.length },
-  { id: 'limp',    label: 'Limpezas de hoje', n: () => limpDe(HOJE).length },
+  { id: 'limp',    label: 'Limpezas',          n: () => limpDe(HOJE).length },
   { id: 'agenda',  label: 'Agenda das empresas', n: () => limpDe(AMANHA).length + limpDe(DEPOIS).length }
 ];
 const HINTS = {
   novas:'Reservas que entraram nas últimas 24 horas e ainda não passaram pelo time.',
   hoje:'Quem chega hoje. O apartamento parte sempre de sujo: só fica verde com saída anterior já liberada.',
   inhouse:'Quem está hospedado agora, para conferência. É aqui que se lança uma limpeza adicional.',
-  prox:'Check-ins de amanhã em diante. Os de hoje ficam na aba própria.',
+  prox:'Todas as reservas de amanhã em diante. Use o período para recortar o mês que interessa.',
   alt:'Alterações em reservas de hóspedes que já estão no apartamento — trocar credenciais e reenviar a facial.',
   canc:'Cancelamentos que exigem ação hoje: a reserva era de hoje, ou o hóspede já estava hospedado.',
   bloq:'Bloqueios e manutenções dos próximos 7 dias, com a descrição escrita na Stays.',
-  limp:'Confirme com a empresa e registre qualquer manutenção ou problema reportado.',
+  limp:'O que já foi feito e o que vem pela frente. Comece pelos atalhos; o período abre o resto.',
   agenda:'O planejamento para mandar às empresas. Copie e cole no WhatsApp de cada uma.'
 };
 
@@ -919,9 +983,10 @@ function baseList() {
   if (view === 'alt')     return D.alt.map(d => ({ t: 'A', d }));
   if (view === 'canc')    return D.canc.map(d => ({ t: 'E', d }));
   if (view === 'bloq')    return D.bloqueios.map(d => ({ t: 'B', d }));
-  // A aba de hoje mostra também as canceladas — é onde se reativa uma que
-  // foi cancelada por engano. Elas só não entram na contagem nem na mensagem.
-  if (view === 'limp')    return D.limpezas.filter(l => l.dia === HOJE).map(d => ({ t: 'L', d }));
+  // Mostra também as canceladas — é onde se reativa uma que foi cancelada
+  // por engano. Elas só não entram na contagem nem na mensagem da empresa.
+  // O recorte de dia agora é do filtro de período, não fixo em hoje.
+  if (view === 'limp')    return D.limpezas.map(d => ({ t: 'L', d }));
   return [];
 }
 const stOf = x => x.t === 'R' || x.t === 'H' ? stReserva(x.d)
@@ -934,13 +999,56 @@ function filtered() {
   if (flt === 'pre')      L = L.filter(x => x.d.pre_reserva);
   if (flt === 'origem')   L = L.filter(x => x.t === 'L' && x.d.origem !== 'check-out');
   if (flt === 'semLimp')  L = L.filter(x => x.t === 'R' && stReserva(x.d).items.find(i => i.f === 'limpeza').s !== 'done');
+  const campo = CAMPO_DATA[view];
+  if (campo && (dataDe || dataAte)) {
+    L = L.filter(x => {
+      const d = soDia(x.d[campo]);
+      if (!d) return false;
+      return (!dataDe || d >= dataDe) && (!dataAte || d <= dataAte);
+    });
+  }
   if (onlyPend) L = L.filter(x => pendOf(stOf(x)) > 0);
   if (q) { const t = q.toLowerCase();
     L = L.filter(x => ((x.d.apartamento || '') + ' ' + (x.d.hospede_nome || '') + ' '
                      + (x.d.empresa || '') + ' ' + (x.d.id || '') + ' '
-                     + (x.d.codigo_canal || '') + ' ' + (x.d.origem_id || '')
+                     + (x.d.codigo_canal || '') + ' ' + (x.d.origem_id || '') + ' '
+                     + (anotacaoDe(x) || '')
                       ).toLowerCase().includes(t)); }
   return L;
+}
+
+// Atalhos de período. São só uma forma rápida de preencher os dois campos
+// de data — não existe um segundo mecanismo de filtro escondido atrás deles.
+function atalhosDe(v) {
+  const d = n => { const x = new Date(); x.setDate(x.getDate() + n);
+                   return x.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); };
+  if (v === 'limp') return [
+    { id: 'hoje',    rot: 'Hoje',            de: HOJE,   ate: HOJE },
+    { id: 'amanha',  rot: 'Amanhã',          de: AMANHA, ate: AMANHA },
+    { id: 'semana',  rot: 'Próximos 7 dias', de: HOJE,   ate: d(7) },
+    { id: 'feitas',  rot: 'Já realizadas',   de: d(-90), ate: d(-1) },
+    { id: 'tudo',    rot: 'Tudo',            de: '',     ate: '' }
+  ];
+  if (v === 'prox') return [
+    { id: 'semana',  rot: 'Próximos 7 dias', de: HOJE, ate: d(7) },
+    { id: 'mes',     rot: 'Próximos 30 dias',de: HOJE, ate: d(30) },
+    { id: 'tudo',    rot: 'Tudo',            de: '',   ate: '' }
+  ];
+  if (v === 'alt' || v === 'canc') return [
+    { id: 'hoje',    rot: 'Hoje',            de: HOJE,  ate: HOJE },
+    { id: 'semana',  rot: 'Últimos 7 dias',  de: d(-7), ate: HOJE },
+    { id: 'tudo',    rot: 'Tudo',            de: '',    ate: '' }
+  ];
+  return [];
+}
+
+function aplicarAtalho(id) {
+  const a = atalhosDe(view).find(x => x.id === id);
+  if (!a) return;
+  atalho = id; dataDe = a.de; dataAte = a.ate;
+  document.getElementById('dataDe').value = dataDe;
+  document.getElementById('dataAte').value = dataAte;
+  render();
 }
 
 function chipsHTML(st) {
@@ -964,6 +1072,30 @@ function whenL(ci) {
 // simplesmente sumir. Mostrar igual à confirmada fazia o time preparar
 // apartamento para hóspede que talvez nunca chegue — foi o caso das três
 // do Brera 22.
+// ---- anotações da operação ----
+//
+// Texto livre preso à reserva. Fica preso ao ID, não à aba: escreveu no
+// check-in, aparece no in house e nas futuras. É o lugar do que a operação
+// aprende e não cabe em caixinha de conferido/não conferido.
+const chaveAnotacao = x => {
+  const tipo = x.t === 'B' ? 'bloqueio' : x.t === 'L' ? 'limpeza' : 'reserva';
+  return tipo + '|' + (x.t === 'L' ? String(x.d.id) : x.d.id);
+};
+const anotacaoDe = x => (D.notas[chaveAnotacao(x)] || {}).texto || '';
+
+function anotacaoHTML(tipo, id) {
+  const n = D.notas[tipo + '|' + id] || {};
+  const tem = !!(n.texto || '').trim();
+  // Sem anotação, só um botão discreto: a lista de futuras tem centenas de
+  // linhas e uma caixa de texto em cada uma tornaria tudo ilegível.
+  return `<div class="anot ${tem ? 'tem' : ''}" data-anot="${esc(tipo + '|' + id)}">
+    ${tem ? `<textarea data-nota="${esc(tipo + '|' + id)}" rows="1"
+        placeholder="Anotação da operação…">${esc(n.texto)}</textarea>
+      <span class="anot-quem">${esc((n.por || '').split('@')[0])}</span>`
+     : `<button class="anot-add" data-abrir="${esc(tipo + '|' + id)}">+ anotação</button>`}
+  </div>`;
+}
+
 const preTag = r => r.pre_reserva
   ? '<span class="tag pre" title="ainda não confirmada na Stays">Pré-reserva</span>' : '';
 
@@ -991,7 +1123,8 @@ function rowReserva(r, st) {
         <span>${esc(r.hospedes || '?')} hósp.</span>${tel}
         ${r.ultima_saida ? `<span>última saída ${dm(r.ultima_saida)} · ${esc(r.ultima_saida_origem)}</span>` : ''}</div></div>
     <div class="when ${w.c}"><b>${w.t}</b>${w.s}</div>
-    <div class="chips">${chipsHTML(st)}</div></div></div>`;
+    <div class="chips">${chipsHTML(st)}</div>
+    ${anotacaoHTML('reserva', r.id)}</div></div>`;
 }
 
 function rowInHouse(r, st) {
@@ -1019,7 +1152,7 @@ function rowInHouse(r, st) {
       data-apto="${esc(r.apartamento)}" data-lid="${esc(r.listing_id)}"
       data-emp="${esc(r.empresa_limpeza || '')}" data-ate="${esc(r.check_out)}">
       <span class="mk">+</span>Limpeza adicional</button></div>
-  </div></div>`;
+    ${anotacaoHTML('reserva', r.id)}</div></div>`;
 }
 
 function rowAlteracao(e, st) {
@@ -1033,7 +1166,8 @@ function rowAlteracao(e, st) {
         <span>${esc(e.hospede_nome || '')}</span>
         <span>hóspede no apartamento agora</span></div></div>
     <div class="when"><b>${dm(q.slice(0, 10))}</b>${q.slice(11, 16)}</div>
-    <div class="chips">${chipsHTML(st)}</div></div></div>`;
+    <div class="chips">${chipsHTML(st)}</div>
+    ${anotacaoHTML('reserva', e.id)}</div></div>`;
 }
 
 function rowEvento(e, st) {
@@ -1049,7 +1183,8 @@ function rowEvento(e, st) {
           ? 'recolher credenciais, avisar a portaria e liberar a limpeza'
           : 'desfazer credenciais, facial e vaga'}</span></div></div>
     <div class="when"><b>${dm(String(e.cancelada_em || '').slice(0, 10))}</b>${String(e.cancelada_em || '').slice(11, 16)}</div>
-    <div class="chips">${chipsHTML(st)}</div></div></div>`;
+    <div class="chips">${chipsHTML(st)}</div>
+    ${anotacaoHTML('reserva', e.id)}</div></div>`;
 }
 
 function rowBloqueio(b, st) {
@@ -1108,7 +1243,12 @@ function render() {
       : (view === 'prox' && flt === 'pre')
       ? 'Pré-reservas: ainda não confirmadas na Stays. Podem virar reserva firme ou simplesmente sumir.'
       : HINTS[view];
-  document.getElementById('clr').hidden = !(flt || onlyPend || q);
+  document.getElementById('clr').hidden = !(flt || onlyPend || q || dataDe || dataAte);
+  const ats = atalhosDe(view);
+  document.getElementById('atalhos').innerHTML = ats.map(a =>
+    `<button data-at="${a.id}" aria-pressed="${atalho === a.id}">${a.rot}</button>`).join('');
+  document.getElementById('periodo').hidden = !CAMPO_DATA[view];
+
   const el = document.getElementById('rows');
   // Na agenda não existe "pendente" nem busca por hóspede: esconder é mais
   // honesto que deixar dois controles que não fazem nada.
@@ -1236,6 +1376,12 @@ function renderKpis() {
 
 function goto(v, f, p) {
   view = v; flt = f || null; onlyPend = !!p; q = '';
+  dataDe = ''; dataAte = ''; atalho = null;
+  // A aba de limpezas abre no dia de hoje: é o que a recepção quer ver ao
+  // clicar. O passado e o futuro estão a um atalho de distância.
+  if (v === 'limp') { dataDe = HOJE; dataAte = HOJE; atalho = 'hoje'; }
+  document.getElementById('dataDe').value = dataDe;
+  document.getElementById('dataAte').value = dataAte;
   document.getElementById('q').value = '';
   document.getElementById('onlyPend').setAttribute('aria-pressed', String(onlyPend));
   renderTabs(); renderBanner(); render();
@@ -1380,6 +1526,16 @@ document.getElementById('rows').addEventListener('click', async e => {
     setTimeout(() => { cp.textContent = 'Copiar mensagem'; }, 1800);
     return;
   }
+  const abrir = e.target.closest('[data-abrir]');
+  if (abrir) {
+    const caixa = abrir.closest('.anot');
+    const chave = abrir.dataset.abrir;
+    caixa.classList.add('tem');
+    caixa.innerHTML = `<textarea data-nota="${chave}" rows="1"
+      placeholder="Anotação da operação…"></textarea><span class="anot-quem"></span>`;
+    caixa.querySelector('textarea').focus();
+    return;
+  }
   const ex = e.target.closest('[data-extra]');
   if (ex) {
     abrirExtra({ reserva: ex.dataset.extra, apto: ex.dataset.apto,
@@ -1410,7 +1566,12 @@ document.getElementById('rows').addEventListener('input', e => {
   if (t.tagName !== 'TEXTAREA') return;
   t.classList.toggle('has', !!t.value.trim());
   clearTimeout(debounce);
-  debounce = setTimeout(() => anotarOcorrencia(Number(t.dataset.limpeza), t.value.trim()), 700);
+  const valor = t.value;
+  if (t.dataset.nota) {
+    debounce = setTimeout(() => salvarAnotacao(t.dataset.nota, valor), 700);
+  } else if (t.dataset.limpeza) {
+    debounce = setTimeout(() => anotarOcorrencia(Number(t.dataset.limpeza), valor.trim()), 700);
+  }
 });
 document.getElementById('exData').addEventListener('change', avisoMesmoDia);
 document.getElementById('exTipo').addEventListener('change', sugerirQuemPaga);
@@ -1421,6 +1582,15 @@ document.getElementById('txFechar').addEventListener('click',
   () => document.getElementById('dlgTexto').close());
 
 document.getElementById('atualizar').addEventListener('click', pedirSincronizacao);
+document.getElementById('atalhos').addEventListener('click', e => {
+  const b = e.target.closest('[data-at]'); if (b) aplicarAtalho(b.dataset.at);
+});
+document.getElementById('dataDe').addEventListener('change', e => {
+  dataDe = e.target.value; atalho = null; render();
+});
+document.getElementById('dataAte').addEventListener('change', e => {
+  dataAte = e.target.value; atalho = null; render();
+});
 
 const op = document.getElementById('onlyPend');
 op.addEventListener('click', () => { onlyPend = !onlyPend; op.setAttribute('aria-pressed', String(onlyPend)); render(); });
