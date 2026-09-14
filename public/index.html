@@ -728,7 +728,7 @@ async function carregar() {
     document.getElementById('estadoSync').textContent = 'atualizando…';
 
 
-    const [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, notas, runs] = await Promise.all([
+    const [checkins, novas, inhouse, canc, alt, bloqueios, limpezas] = await Promise.all([
       // Sem teto: a sincronização baixa um ano à frente, e a aba de futuras
       // mostra tudo o que existe. Quem recorta é o filtro de período.
       sb.from('v_checkin').select('*').gte('check_in', HOJE).order('check_in').limit(3000),
@@ -742,13 +742,43 @@ async function carregar() {
       sb.from('blocks').select('*, listings(nome)')
         .gte('fim', HOJE).lte('inicio', SETE_DIAS).order('fim').limit(200),
       sb.from('v_limpezas').select('*'),
-      sb.from('tasks').select('assunto_tipo,assunto_id,item,feito'),
-      sb.from('anotacoes').select('assunto_tipo,assunto_id,texto,por,em'),
+    ]);
+
+    const erro1 = [checkins, novas, inhouse, canc, alt, bloqueios, limpezas].find(r => r.error);
+    if (erro1) throw erro1.error;
+
+    // tasks e anotacoes SÓ dos assuntos que estão realmente na tela agora —
+    // nunca da tabela inteira. Antes, a consulta vinha sem filtro nenhum e
+    // caía no teto padrão de 1.000 linhas do PostgREST: quando o histórico
+    // de tarefas passou disso, marcações recentes ficavam de fora da
+    // resposta e, como o tempo real recarrega tudo a cada mudança, a
+    // caixinha que você acabava de marcar "voltava a desmarcar" — na
+    // verdade nunca chegava a aparecer no recarregamento seguinte. Filtrar
+    // pelos ids em tela resolve isso e nunca mais depende do tamanho total
+    // do histórico.
+    const idsRelevantes = [...new Set([
+      ...(checkins.data  || []).map(r => String(r.id)),
+      ...(novas.data     || []).map(r => String(r.id)),
+      ...(inhouse.data   || []).map(r => String(r.id)),
+      ...(canc.data      || []).map(r => String(r.id)),
+      ...(alt.data       || []).map(r => String(r.id)),
+      ...(bloqueios.data || []).map(r => String(r.id)),
+      ...(limpezas.data  || []).map(r => String(r.id)),
+    ])];
+
+    const semAssunto = { data: [], error: null };
+    const [tarefas, notas, runs] = await Promise.all([
+      idsRelevantes.length
+        ? sb.from('tasks').select('assunto_tipo,assunto_id,item,feito').in('assunto_id', idsRelevantes)
+        : Promise.resolve(semAssunto),
+      idsRelevantes.length
+        ? sb.from('anotacoes').select('assunto_tipo,assunto_id,texto,por,em').in('assunto_id', idsRelevantes)
+        : Promise.resolve(semAssunto),
       sb.from('sync_runs').select('*').order('inicio', { ascending: false }).limit(1)
     ]);
 
-    const erro = [checkins, novas, inhouse, canc, alt, bloqueios, limpezas, tarefas, notas, runs].find(r => r.error);
-    if (erro) throw erro.error;
+    const erro2 = [tarefas, notas, runs].find(r => r.error);
+    if (erro2) throw erro2.error;
 
     D.checkins  = checkins.data || [];
     D.novas     = novas.data || [];
